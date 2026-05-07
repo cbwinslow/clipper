@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vaclip"
+version = "0.1.0"
+description = "VAClip - Quality-first, local-first automatic video clipping system"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "cbwinslow" }
+]
+keywords = ["video", "clipping", "ai", "highlights", "transcription", "podcast"]
+
+dependencies = [
+  # CLI
+  "typer[all]>=0.12.0",
+  "rich>=13.0.0",
+
+  # Config & validation
+  "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
+  "pyyaml>=6.0.0",
+
+  # Logging
+  "structlog>=24.0.0",
+
+  # Media processing
+  # ffmpeg-python is a wrapper; FFmpeg binary must be installed separately
+  "ffmpeg-python>=0.2.0",
+
+  # Transcription - GPU accelerated
+  # faster-whisper requires CTranslate2 with CUDA support
+  "faster-whisper>=1.0.0",
+
+  # Ingest
+  "yt-dlp>=2024.1.0",
+
+  # Embeddings / semantic scoring
+  "sentence-transformers>=3.0.0",
+  "torch>=2.0.0",
+  "numpy>=1.26.0",
+
+  # HTTP / utilities
+  "httpx>=0.27.0",
+  "tenacity>=8.0.0",
+  "tqdm>=4.66.0",
+  "python-dotenv>=1.0.0",
+
+  # Artifact persistence
+  "orjson>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.4.0",
+  "mypy>=1.10.0",
+  "pre-commit>=3.7.0",
+]
+shot-detection = [
+  # TransNetV2 - install separately from source
+  # See docs/setup/transnetv2.md
+  "tensorflow>=2.15.0",
+]
+diarization = [
+  # pyannote requires HuggingFace token - see docs/setup/pyannote.md
+  "pyannote.audio>=3.1.0",
+]
+openrouter = [
+  "openai>=1.30.0",  # OpenRouter uses OpenAI-compatible API
+]
+
+[project.scripts]
+vaclip = "vaclip.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vaclip"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=src/vaclip --cov-report=term-missing"
