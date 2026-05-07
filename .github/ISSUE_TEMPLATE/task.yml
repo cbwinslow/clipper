@@ -1,0 +1,101 @@
+name: "Implementation Task"
+description: An atomic implementation task for the VAClip pipeline
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## VAClip Implementation Task
+        Fill in all fields. This becomes the agent work order.
+
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      description: The ID from docs/tasks.md (e.g. I-01, SC-03)
+      placeholder: "e.g. I-01"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - "Phase 0 - Project Scaffolding"
+        - "Phase 1 - Core Models & Config"
+        - "Phase 2 - Ingest"
+        - "Phase 3 - Transcription"
+        - "Phase 4 - Scoring"
+        - "Phase 5 - Export"
+        - "Phase 6 - Pipeline Integration"
+        - "Phase 7 - CLI & UX"
+        - "Phase 8 - Testing"
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: One-sentence description of what this task accomplishes
+    validations:
+      required: true
+
+  - type: textarea
+    id: file_targets
+    attributes:
+      label: Target Files
+      description: List the files to create or modify
+      placeholder: |
+        - src/vaclip/ingest/ytdlp_adapter.py (modify)
+        - tests/unit/test_ingest.py (create)
+    validations:
+      required: true
+
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs
+      description: What data, files, or state are required?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outputs
+    attributes:
+      label: Outputs
+      description: What data, files, or state does this task produce?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Implementation complete - no NotImplementedError stubs remain
+        - [ ] All TODO comments resolved
+        - [ ] Type hints on all public functions and methods
+        - [ ] Docstrings on all public classes and functions
+        - [ ] structlog calls at entry/exit of significant operations
+        - [ ] Error handling wraps all I/O with typed exceptions
+        - [ ] Unit tests written and passing (pytest tests/unit -v)
+        - [ ] ruff lint passes (ruff check src/ tests/)
+        - [ ] mypy passes (mypy src/vaclip)
+        - [ ] docs/tasks.md status updated to [x]
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_hints
+    attributes:
+      label: Agent Implementation Hints
+      description: Specific library calls, patterns, or pitfalls for the AI coding agent
+
+  - type: textarea
+    id: blocked_by
+    attributes:
+      label: Blocked By
+      description: Issue numbers this task depends on
+      placeholder: "Blocked by #3 (BaseIngestAdapter)"
