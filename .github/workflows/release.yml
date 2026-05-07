@@ -1,0 +1,62 @@
+# .github/workflows/release.yml
+# Triggered when a version tag (v*.*.*) is pushed.
+# Runs full CI, then publishes a GitHub Release with changelog.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install build
+
+      - name: Run tests before release
+        run: pytest tests/unit -v --tb=short
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD \
+            --pretty=format:"- %s (%h)" \
+            --no-merges > CHANGELOG_TEMP.md
+          echo "Generated changelog:"
+          cat CHANGELOG_TEMP.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "VAClip v${{ steps.version.outputs.VERSION }}"
+          body_path: CHANGELOG_TEMP.md
+          files: dist/*
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
