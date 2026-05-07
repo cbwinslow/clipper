@@ -1,0 +1,3 @@
+# VAClip input directory
+# Place source video files here for local file ingest
+# This directory is gitignored for media files but tracked for structure
