@@ -1,0 +1,77 @@
+# VAClip Application Configuration
+# All settings can be overridden via environment variables prefixed with VACLIP_
+# e.g. VACLIP_TRANSCRIPTION__MODEL_SIZE=medium
+
+app:
+  name: vaclip
+  version: "0.1.0"
+  debug: false
+  log_level: INFO  # DEBUG, INFO, WARNING, ERROR
+
+paths:
+  input_dir: ./input
+  output_dir: ./output
+  cache_dir: ./cache
+  models_dir: ./models
+  logs_dir: ./logs
+
+transcription:
+  backend: faster_whisper          # faster_whisper | whisperx (future)
+  model_size: large-v3             # tiny, base, small, medium, large-v2, large-v3
+  device: cuda                     # cuda | cpu | auto
+  compute_type: float16            # float16 | int8_float16 | int8 (use int8_float16 if OOM)
+  language: null                   # null = auto-detect | en | es | etc.
+  word_timestamps: true
+  vad_filter: true
+  vad_parameters:
+    min_silence_duration_ms: 500
+  beam_size: 5
+  best_of: 5
+  temperature: 0.0
+  condition_on_previous_text: true
+
+segmentation:
+  min_clip_duration: 10.0          # seconds
+  max_clip_duration: 59.0          # seconds (keep under 60 for shorts)
+  window_step: 5.0                 # sliding window step in seconds
+  overlap_suppression_iou: 0.5    # IoU threshold for removing overlapping candidates
+  shot_detection:
+    enabled: false                 # requires TransNetV2 install
+    backend: transnetv2
+    threshold: 0.5
+
+scoring:
+  default_profile: podcast
+  default_intent: highlight
+  top_k: 20                        # number of candidates to keep after scoring
+  min_score: 0.3                   # minimum score threshold
+  use_embeddings: true
+  embedding_model: all-mpnet-base-v2
+  openrouter:
+    enabled: false                 # only enable after local baseline works
+    model: null
+    max_candidates: 10
+    token_budget: 1000
+
+export:
+  default_format: source           # source | shorts_vertical | shorts_square
+  video_encoder: libx264           # libx264 | h264_nvenc (draft)
+  audio_encoder: aac
+  crf: 18                          # quality for libx264 (lower = better, 18 is near-lossless)
+  preset: slow                     # ultrafast | fast | medium | slow | veryslow
+  nvenc_preset: p7                 # for h264_nvenc: p1(fast)-p7(quality)
+  output_extension: mp4
+  filename_template: "{run_id}_{rank:02d}_{start:.0f}s_{end:.0f}s"
+  vertical:
+    width: 1080
+    height: 1920
+    strategy: pad                  # pad | crop
+  square:
+    width: 1080
+    height: 1080
+    strategy: pad
+
+artifacts:
+  save_all: true                   # save all intermediate stage artifacts
+  compress: false                  # gzip compress JSON artifacts
+  overwrite: false                 # never overwrite existing artifacts
