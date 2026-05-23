@@ -279,8 +279,11 @@ class BaseAdapter(ABC):
 
 ### FFmpeg Subprocess Pattern
 ```python
+from __future__ import annotations
+
 import subprocess
 from pathlib import Path
+from vaclip.utils.exceptions import ExportError
 
 def run_ffmpeg(input_path: Path, output_path: Path) -> None:
     cmd = [
