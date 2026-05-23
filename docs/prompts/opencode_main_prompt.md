@@ -290,7 +290,7 @@ def run_ffmpeg(input_path: Path, output_path: Path) -> None:
         "ffmpeg",
         "-y",  # Overwrite output
         "-i", str(input_path),
-        "-vcodec", "libx264",
+        "-vcodec", "h264_nvenc",
         "-acodec", "aac",
         str(output_path)
     ]
