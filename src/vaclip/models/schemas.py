@@ -164,6 +164,11 @@ class Transcript(BaseModel, frozen=True):
     def full_text(self) -> str:
         return " ".join(s.text for s in self.segments)
 
+    @property
+    def id(self) -> str:
+        """Unique identifier (derived from model_name for compatibility)."""
+        return f"{self.model_name}-{self.transcribed_at.isoformat()}"
+
 
 # ---------------------------------------------------------------------------
 # Scoring models

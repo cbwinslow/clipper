@@ -13,21 +13,23 @@ Agent Instructions:
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
-from vaclip.ingest.base import BaseIngestAdapter
+from vaclip.ingest.base import IngestAdapter
 from vaclip.logging.setup import get_logger
 from vaclip.models.media import MediaAsset
-from vaclip.utils.exceptions import IngestError, UnsupportedSourceError
+from vaclip.utils.exceptions import VaClipIngestError, VaClipUnsupportedSourceError
 
 log = get_logger(__name__)
 
 
-class LocalFileAdapter(BaseIngestAdapter):
+class LocalFileAdapter(IngestAdapter):
     """Ingest adapter for local video and audio files.
 
     Validates the file format, optionally copies it to the input directory,
@@ -78,6 +80,23 @@ class LocalFileAdapter(BaseIngestAdapter):
         input_dir.mkdir(parents=True, exist_ok=True)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
+    def supports(self, source: str) -> bool:
+        """Return True if the source is a local file with supported extension.
+
+        Args:
+            source: Source string to check.
+
+        Returns:
+            True if source is a local file with supported extension, False otherwise.
+        """
+        try:
+            path = Path(source)
+            # Must be an existing file with supported extension
+            return path.is_file() and path.suffix.lower() in self.supported_extensions
+        except Exception:
+            # If path creation fails or any other error, it's not supported
+            return False
+
     def ingest(self, source: str, profile: str = "generic") -> MediaAsset:
         """Ingest a local file and return a normalized MediaAsset.
 
@@ -103,17 +122,17 @@ class LocalFileAdapter(BaseIngestAdapter):
             local_path = self._copy_or_link(source_path, asset_id)
             metadata = self._extract_metadata(local_path)
             audio_path = self._extract_audio(local_path, asset_id)
-            asset = self._build_asset(asset_id, local_path, audio_path, metadata, profile)
+            asset = self._build_asset(asset_id, source_path, local_path, audio_path, metadata, profile)
             self._save_asset(asset)
 
             log.info("ingest.complete", asset_id=asset_id, duration=asset.duration_seconds)
             return asset
 
-        except (UnsupportedSourceError, IngestError):
+        except VaClipIngestError:
             raise
         except Exception as exc:
             log.error("ingest.failed", source=str(source_path), asset_id=asset_id, error=str(exc))
-            raise IngestError(f"Local ingest failed for {source_path}: {exc}") from exc
+            raise VaClipIngestError(f"Local ingest failed for {source_path}: {exc}") from exc
 
     def _validate(self, path: Path) -> None:
         """Validate that the file exists and has a supported extension.
@@ -122,14 +141,14 @@ class LocalFileAdapter(BaseIngestAdapter):
             path: Path to validate.
 
         Raises:
-            UnsupportedSourceError: If the path doesn't exist or is unsupported.
+            VaClipUnsupportedSourceError: If the path doesn't exist or is unsupported.
         """
         if not path.exists():
-            raise UnsupportedSourceError(f"File not found: {path}")
+            raise VaClipUnsupportedSourceError(f"File not found: {path}")
         if not path.is_file():
-            raise UnsupportedSourceError(f"Not a file: {path}")
+            raise VaClipUnsupportedSourceError(f"Not a file: {path}")
         if path.suffix.lower() not in self.supported_extensions:
-            raise UnsupportedSourceError(
+            raise VaClipUnsupportedSourceError(
                 f"Unsupported extension '{path.suffix}'. "
                 f"Supported: {sorted(self.supported_extensions)}"
             )
@@ -164,21 +183,104 @@ class LocalFileAdapter(BaseIngestAdapter):
             Dictionary with keys: duration, width, height, fps, codec, format.
 
         Raises:
-            IngestError: If ffprobe fails.
+            VaClipIngestError: If ffprobe fails.
         """
-        # TODO: implement ffprobe metadata extraction
-        # cmd = [
-        #     "ffprobe", "-v", "quiet",
-        #     "-print_format", "json",
-        #     "-show_streams", "-show_format",
-        #     str(video_path),
-        # ]
-        # result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        # if result.returncode != 0:
-        #     raise IngestError(f"ffprobe failed: {result.stderr}")
-        # data = json.loads(result.stdout)
-        # Parse streams and format to extract duration, width, height, fps, codec
-        raise NotImplementedError("LocalFileAdapter._extract_metadata() not yet implemented")
+        cmd = [
+            "ffprobe", "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams", "-show_format",
+            str(video_path),
+        ]
+        
+        log.debug("ffprobe.metadata.start", cmd=" ".join(cmd), path=str(video_path))
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        
+        if result.returncode != 0:
+            log.error("ffprobe.metadata.failed", path=str(video_path), error=result.stderr, returncode=result.returncode)
+            raise VaClipIngestError(f"ffprobe failed: {result.stderr}")
+        
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            log.error("ffprobe.metadata.json_decode_failed", path=str(video_path), error=str(exc), stdout=result.stdout[:200])
+            raise VaClipIngestError(f"Failed to parse ffprobe output: {exc}") from exc
+        
+        # Initialize default values
+        duration = 0.0
+        width = 0
+        height = 0
+        fps = 0.0
+        codec = "unknown"
+        format_name = "unknown"
+        
+        # Extract format information
+        if "format" in data:
+            format_info = data["format"]
+            duration = float(format_info.get("duration", 0))
+            format_name = format_info.get("format_name", "unknown")
+        
+        # Extract stream information
+        if "streams" in data:
+            for stream in data["streams"]:
+                # Look for video stream first
+                if stream.get("codec_type") == "video":
+                    width = int(stream.get("width", 0))
+                    height = int(stream.get("height", 0))
+                    
+                    # Parse frame rate (can be string like "30/0" or "30")
+                    fps_str = stream.get("r_frame_rate", "0")
+                    try:
+                        if "/" in fps_str:
+                            num, den = fps_str.split("/")
+                            fps = float(num) / float(den) if float(den) != 0 else 0.0
+                        else:
+                            fps = float(fps_str)
+                    except (ValueError, ZeroDivisionError):
+                        fps = 0.0
+                    
+                    codec = stream.get("codec_name", "unknown")
+                    break  # Use first video stream found
+            
+            # If no video stream found, look for audio stream for codec at least
+            if width == 0 or height == 0:
+                for stream in data["streams"]:
+                    if stream.get("codec_type") == "audio" and codec == "unknown":
+                        codec = stream.get("codec_name", "unknown")
+                        break
+        
+        # Ensure we have reasonable defaults
+        if duration <= 0:
+            duration = 0.0
+        if width <= 0:
+            width = 1920  # Default to common HD width
+        if height <= 0:
+            height = 1080  # Default to common HD height
+        if fps <= 0.0:
+            fps = 30.0   # Default to common FPS
+        if codec == "unknown":
+            codec = "unknown"
+        if format_name == "unknown":
+            format_name = "unknown"
+        
+        metadata = {
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "codec": codec,
+            "format": format_name,
+        }
+        
+        log.info("ffprobe.metadata.complete", 
+                path=str(video_path),
+                duration=duration,
+                width=width,
+                height=height,
+                fps=fps,
+                codec=codec,
+                format=format_name)
+        
+        return metadata
 
     def _extract_audio(self, video_path: Path, asset_id: str) -> Path:
         """Extract audio track as 16kHz mono WAV using FFmpeg.
@@ -193,15 +295,23 @@ class LocalFileAdapter(BaseIngestAdapter):
         Raises:
             IngestError: If FFmpeg fails.
         """
-        audio_path = self.cache_dir / "audio" / f"{asset_id}.wav"
-        audio_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # TODO: implement FFmpeg audio extraction (same as YtDlpAdapter._extract_audio)
-        raise NotImplementedError("LocalFileAdapter._extract_audio() not yet implemented")
+        from vaclip.ingest.audio_extractor import extract_audio
+        
+        audio_path = extract_audio(
+            video_path=video_path,
+            asset_id=asset_id,
+            cache_dir=self.cache_dir,
+            sample_rate=self.AUDIO_SAMPLE_RATE,
+            channels=self.AUDIO_CHANNELS,
+        )
+        
+        log.info("ffmpeg.extract.audio.complete", asset_id=asset_id, audio_path=str(audio_path))
+        return audio_path
 
     def _build_asset(
         self,
         asset_id: str,
+        source_path: Path,
         local_path: Path,
         audio_path: Path,
         metadata: dict[str, Any],
@@ -211,7 +321,8 @@ class LocalFileAdapter(BaseIngestAdapter):
 
         Args:
             asset_id: Unique identifier.
-            local_path: Path to the local video file.
+            source_path: Original source file path.
+            local_path: Path to the local video file (staged in input directory).
             audio_path: Path to extracted WAV.
             metadata: ffprobe metadata dict.
             profile: Content profile.
@@ -219,8 +330,37 @@ class LocalFileAdapter(BaseIngestAdapter):
         Returns:
             Populated MediaAsset instance.
         """
-        # TODO: construct MediaAsset from metadata
-        raise NotImplementedError("LocalFileAdapter._build_asset() not yet implemented")
+        # Extract title from metadata or use filename stem
+        title = metadata.get("title") or local_path.stem
+        
+        asset = MediaAsset(
+            id=UUID(asset_id),
+            source_url=str(source_path),
+            local_path=local_path,
+            title=title,
+            duration_seconds=metadata["duration"],
+            width=metadata["width"],
+            height=metadata["height"],
+            fps=metadata["fps"],
+            codec=metadata["codec"],
+            audio_path=audio_path,
+            format=metadata["format"],
+            profile=profile,
+        )
+        
+        log.info(
+            "asset.build.complete",
+            asset_id=asset_id,
+            title=title,
+            duration=metadata["duration"],
+            width=metadata["width"],
+            height=metadata["height"],
+            fps=metadata["fps"],
+            codec=metadata["codec"],
+            format=metadata["format"]
+        )
+        
+        return asset
 
     def _save_asset(self, asset: MediaAsset) -> None:
         """Save MediaAsset JSON to cache directory."""

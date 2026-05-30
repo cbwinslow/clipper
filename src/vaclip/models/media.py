@@ -12,6 +12,7 @@ Agent Notes:
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,40 @@ from typing import Optional
 from pydantic import Field, field_validator
 
 from vaclip.models.base import IdentifiedModel, VaClipBaseModel
+
+# Re-export models from schemas for backward compatibility
+from vaclip.models.schemas import (
+    ClipBounds,
+    ExportedClip,
+    HighlightType,
+    ScoredSegment,
+    Segment,
+    SignalScore,
+    Transcript,
+    Word,
+)
+
+# Alias for convenience
+WordToken = Word
+
+__all__ = [
+    "ClipBounds",
+    "ContentProfile",
+    "ClipIntent",
+    "ExportedClip",
+    "HighlightType",
+    "IngestResult",
+    "MediaAsset",
+    "MediaMetadata",
+    "ScoredSegment",
+    "Segment",
+    "SignalScore",
+    "SourceRequest",
+    "SourceType",
+    "Transcript",
+    "Word",
+    "WordToken",
+]
 
 
 class SourceType(str, Enum):

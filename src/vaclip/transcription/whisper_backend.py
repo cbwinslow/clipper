@@ -14,21 +14,22 @@ Agent Instructions:
 """
 from __future__ import annotations
 
-import pathlib
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Optional
 
 from vaclip.logging.setup import get_logger
-from vaclip.transcription.base import BaseTranscriptionBackend
-from vaclip.utils.exceptions import TranscriptionError
+from vaclip.utils.exceptions import VaClipTranscriptionError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from vaclip.config.settings import Settings
+    from vaclip.models.schemas import Transcript
 
 log = get_logger(__name__)
 
 
-class WhisperBackend(BaseTranscriptionBackend):
+class WhisperBackend:
     """GPU-accelerated transcription backend using faster-whisper + CUDA.
 
     Targets RTX 3060 (12GB VRAM) with large-v3 model and float16 precision.
@@ -43,7 +44,7 @@ class WhisperBackend(BaseTranscriptionBackend):
 
         backend = WhisperBackend()
         transcript = backend.transcribe(Path("cache/audio/abc123.wav"), "abc123")
-        print(len(transcript.words))  # word-level tokens
+        print(len(transcript.segments))  # segment-level tokens
     """
 
     MODEL_NAME: str = "large-v3"
@@ -51,7 +52,7 @@ class WhisperBackend(BaseTranscriptionBackend):
     COMPUTE_TYPE: str = "float16"   # optimal for RTX 3060
     MODELS_DIR: str = "models"
 
-    def __init__(self, model_name: str | None = None) -> None:
+    def __init__(self, model_name: Optional[str] = None) -> None:
         """Load the Whisper model. Downloads to models/ on first use.
 
         Args:
@@ -65,7 +66,7 @@ class WhisperBackend(BaseTranscriptionBackend):
         """Lazy-load the Whisper model to avoid startup delay.
 
         Raises:
-            TranscriptionError: If the model fails to load.
+            VaClipTranscriptionError: If the model fails to load.
         """
         if self._model is not None:
             return
@@ -76,104 +77,120 @@ class WhisperBackend(BaseTranscriptionBackend):
             compute_type=self.COMPUTE_TYPE,
         )
         try:
-            # TODO: implement model loading
-            # from faster_whisper import WhisperModel
-            # self._model = WhisperModel(
-            #     self._model_name,
-            #     device=self.DEVICE,
-            #     compute_type=self.COMPUTE_TYPE,
-            #     download_root=self.MODELS_DIR,
-            # )
-            raise NotImplementedError("WhisperBackend._load_model() not yet implemented")
+            from faster_whisper import WhisperModel
+            self._model = WhisperModel(
+                self._model_name,
+                device=self.DEVICE,
+                compute_type=self.COMPUTE_TYPE,
+                download_root=self.MODELS_DIR,
+            )
         except Exception as exc:
             log.error("transcription.model_load_failed", model=self._model_name, error=str(exc))
-            raise TranscriptionError(f"Failed to load Whisper model: {exc}") from exc
+            raise VaClipTranscriptionError(f"Failed to load Whisper model: {exc}") from exc
 
-    def transcribe(
-        self,
-        audio_path: pathlib.Path,
-        asset_id: str,
-        language: str | None = None,
-    ) -> "Transcript":  # type: ignore[name-defined]  # noqa: F821
-        """Transcribe an audio file to a word-level timestamped Transcript.
+    def transcribe(self, audio_path: str, run_id: str, language: Optional[str] = None) -> "Transcript":
+        """Transcribe audio file and return a Transcript.
+
+        Implementations must:
+        1. Load or reuse the ASR model
+        2. Run transcription with word timestamps
+        3. Return a complete Transcript (Pydantic model)
+        4. Log model name, compute type, and duration
+        5. Handle CUDA errors gracefully
 
         Args:
-            audio_path: Path to 16kHz mono WAV file.
-            asset_id: Used to name the output JSON file.
-            language: Language code (e.g., "en"). None = auto-detect.
+            audio_path: Path to the extracted audio file.
+            run_id: Run identifier for artifact grouping.
+            language: Optional ISO 639-1 language code (auto-detect if None).
 
         Returns:
-            Transcript with word-level tokens and metadata.
-
-        Raises:
-            TranscriptionError: If transcription fails.
+            Transcript with all segments populated.
         """
-        from vaclip.models.media import Transcript, WordToken  # avoid circular
+        from vaclip.models.schemas import Transcript, Segment, Word
+        from vaclip.config.settings import get_settings
 
         log.info(
             "transcription.start",
-            asset_id=asset_id,
-            audio_path=str(audio_path),
+            run_id=run_id,
+            audio_path=audio_path,
             backend=self.DEVICE,
             model=self._model_name,
         )
 
         self._load_model()
+        assert self._model is not None, "Model should be loaded by _load_model"
 
         try:
-            # TODO: implement transcription
-            # segments, info = self._model.transcribe(
-            #     str(audio_path),
-            #     language=language,
-            #     word_timestamps=True,
-            #     vad_filter=True,
-            #     beam_size=5,
-            # )
-            #
-            # words: list[WordToken] = []
-            # raw_segments: list[dict] = []
-            # for segment in segments:
-            #     raw_segments.append(segment._asdict())
-            #     if segment.words:
-            #         for w in segment.words:
-            #             words.append(WordToken(
-            #                 word=w.word.strip(),
-            #                 start=w.start,
-            #                 end=w.end,
-            #                 confidence=w.probability,
-            #             ))
-            #
-            # transcript = Transcript(
-            #     asset_id=asset_id,
-            #     language=info.language,
-            #     words=words,
-            #     segments=raw_segments,
-            #     model_name=self._model_name,
-            #     backend=f"whisper_{self.DEVICE}",
-            #     duration_seconds=info.duration,
-            #     created_at=datetime.now(timezone.utc),
-            # )
-            # self._save_transcript(transcript)
-            #
-            # log.info("transcription.complete", asset_id=asset_id, word_count=len(words))
-            # return transcript
-            raise NotImplementedError("WhisperBackend.transcribe() not yet implemented")
+            # Import faster_whisper here to avoid slow startup if not used
+            from faster_whisper import WhisperModel
 
-        except TranscriptionError:
+            segments, info = self._model.transcribe(
+                audio_path,
+                language=language,
+                word_timestamps=True,
+                vad_filter=True,
+                beam_size=5,
+            )
+
+            # Convert faster_whisper output to our Pydantic Transcript model
+            transcript_segments: list[Segment] = []
+            for segment in segments:
+                # Convert words if present
+                words: list[Word] = []
+                if segment.words:
+                    for w in segment.words:
+                        word = Word(
+                            text=w.word.strip(),
+                            start=w.start,
+                            end=w.end,
+                            confidence=w.probability,
+                        )
+                        words.append(word)
+
+                trans_segment = Segment(
+                    id=segment.id,
+                    text=segment.text,
+                    start=segment.start,
+                    end=segment.end,
+                    words=words,
+                )
+                transcript_segments.append(trans_segment)
+
+            # Build Transcript (Pydantic model)
+            transcript = Transcript(
+                segments=transcript_segments,
+                language=info.language,
+                model_name=self._model_name,
+                duration_sec=info.duration,
+            )
+
+            # Save transcript to cache
+            settings = get_settings()
+            self._save_transcript(transcript, settings, run_id)
+
+            log.info(
+                "transcription.complete",
+                run_id=run_id,
+                word_count=sum(len(s.words) for s in transcript_segments),
+                segment_count=len(transcript_segments),
+            )
+            return transcript
+
+        except VaClipTranscriptionError:
             raise
         except Exception as exc:
-            log.error("transcription.failed", asset_id=asset_id, error=str(exc))
-            raise TranscriptionError(f"Transcription failed: {exc}") from exc
+            log.error("transcription.failed", run_id=run_id, error=str(exc))
+            raise VaClipTranscriptionError(f"Transcription failed: {exc}") from exc
 
-    def _save_transcript(self, transcript: "Transcript") -> None:  # type: ignore[name-defined]
+    def _save_transcript(self, transcript: "Transcript", settings: "Settings", run_id: str) -> None:
         """Serialize transcript to JSON in the cache directory.
 
         Args:
             transcript: The Transcript to serialize.
+            settings: Settings object with paths configuration.
+            run_id: Run identifier for the transcript filename.
         """
-        from vaclip.config.settings import get_settings
-        settings = get_settings()
-        dest = settings.paths.transcripts_dir / f"{transcript.asset_id}.json"
+        dest = settings.paths.transcripts_dir / f"{run_id}.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(transcript.model_dump_json(indent=2))
         log.info("transcription.saved", path=str(dest))
@@ -192,7 +209,7 @@ class WhisperCPUBackend(WhisperBackend):
 
 
 def get_transcription_backend(
-    settings: "Settings | None" = None,
+    settings: Optional["Settings"] = None,
 ) -> WhisperBackend:
     """Return the best available transcription backend for the current hardware.
 

@@ -15,9 +15,12 @@ Agent Notes:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
-from vaclip.models.media import IngestResult, SourceRequest, SourceType
+if TYPE_CHECKING:
+    from vaclip.models.media import MediaAsset
+
+from vaclip.models.media import SourceRequest, SourceType
 
 # Type alias for event hook callbacks
 ProgressCallback = Callable[[float, str], None]  # (progress_pct, message)
@@ -38,7 +41,7 @@ class IngestAdapter(ABC):
     def __init__(
         self,
         on_progress: Optional[ProgressCallback] = None,
-        on_complete: Optional[Callable[[IngestResult], None]] = None,
+        on_complete: Optional[Callable[["MediaAsset"], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         """Initialize the adapter with optional event hook callbacks."""
@@ -62,21 +65,22 @@ class IngestAdapter(ABC):
         ...
 
     @abstractmethod
-    def ingest(self, request: SourceRequest, output_dir: str) -> IngestResult:
-        """Download/stage the source and return an IngestResult.
+    def ingest(self, source: str, profile: str = "generic") -> "MediaAsset":
+        """Download/stage the source and return a MediaAsset.
 
         Implementations must:
-        1. Stage the file to output_dir
+        1. Stage the file to the configured input directory
         2. Call _emit_progress() during long operations
         3. Raise VaClipIngestError on unrecoverable failure
-        4. Return a complete IngestResult with staged_path set
+        4. Extract audio to cache directory if needed
+        5. Return a complete MediaAsset with all metadata populated
 
         Args:
-            request: The validated SourceRequest.
-            output_dir: Local directory to stage files into.
+            source: URL or local path to the media to ingest.
+            profile: Content profile hint for downstream processing.
 
         Returns:
-            IngestResult with staged_path and run_id populated.
+            MediaAsset with staged_path, audio_path, and metadata populated.
         """
         ...
 
@@ -85,9 +89,9 @@ class IngestAdapter(ABC):
         if self._on_progress:
             self._on_progress(pct, message)
 
-    def _emit_complete(self, result: IngestResult) -> None:
+    def _emit_complete(self, result: Optional["MediaAsset"]) -> None:
         """Emit a completion event to the registered callback if any."""
-        if self._on_complete:
+        if self._on_complete and result is not None:
             self._on_complete(result)
 
     def _emit_error(self, exc: Exception) -> None:
