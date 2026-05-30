@@ -238,10 +238,14 @@ class ExportedClip(BaseModel):
     source_path: Path = Field(..., description="Original media file")
     output_path: Path = Field(..., description="Rendered clip file")
     bounds: ClipBounds
+    profile: str = Field(..., description="Content profile used for scoring")
+    width: int = Field(..., description="Output video width in pixels")
+    height: int = Field(..., description="Output video height in pixels")
     framing: FramingStrategy = FramingStrategy.WIDE
     scored_segment: ScoredSegment
     exported_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    file_size_bytes: int | None = Field(None, description="Output file size in bytes")
 
     @property
     def duration(self) -> float:

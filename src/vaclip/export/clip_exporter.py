@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
-from vaclip.utils.exceptions import ExportError
+from vaclip.models.media import ExportedClip
+from vaclip.models.schemas import ClipBounds, FramingStrategy as FramingStrategyEnum
+from vaclip.utils.exceptions import VaClipExportError
 
 if TYPE_CHECKING:
     from vaclip.models.media import ExportedClip, MediaAsset, ScoredSegment
@@ -127,11 +130,11 @@ def get_framing_strategy(name: str) -> FramingStrategy:
         Instantiated FramingStrategy.
 
     Raises:
-        ExportError: If the strategy name is not recognized.
+        VaClipExportError: If the strategy name is not recognized.
     """
     cls = FRAMING_STRATEGIES.get(name)
     if cls is None:
-        raise ExportError(
+        raise VaClipExportError(
             f"Unknown framing strategy '{name}'. "
             f"Available: {list(FRAMING_STRATEGIES)}"
         )
@@ -219,7 +222,7 @@ class ClipExporter:
             try:
                 clip = self._export_one(media, seg, strategy, asset_output_dir)
                 clips.append(clip)
-            except ExportError as exc:
+            except VaClipExportError as exc:
                 log.error(
                     "export.clip_failed",
                     rank=seg.rank,
@@ -250,55 +253,53 @@ class ClipExporter:
             ExportedClip with metadata.
 
         Raises:
-            ExportError: If FFmpeg fails.
+            VaClipExportError: If FFmpeg fails.
         """
         from vaclip.models.media import ExportedClip
 
         start = seg.segment.start
         end = seg.segment.end
-        duration = end - start
-        filename = f"{seg.rank:03d}_{seg.profile}_{strategy.name}.mp4"
+        filename = f"{seg.rank:03d}_{media.profile}_{strategy.name}.mp4"
         output_path = output_dir / filename
 
         vf_filter = strategy.build_filter(media)
 
-        # TODO: implement FFmpeg command and execute it
-        # cmd = [
-        #     self.ffmpeg_bin,
-        #     "-ss", str(start),
-        #     "-to", str(end),
-        #     "-i", str(media.local_path),
-        #     "-vf", vf_filter,
-        #     "-c:v", self.VIDEO_CODEC,
-        #     "-preset", self.VIDEO_PRESET,
-        #     "-crf", str(self.VIDEO_CRF),
-        #     "-c:a", self.AUDIO_CODEC,
-        #     "-b:a", self.AUDIO_BITRATE,
-        #     "-movflags", "+faststart",
-        #     "-y",  # overwrite output (not source)
-        #     str(output_path),
-        # ]
-        # log.info("export.ffmpeg_start", rank=seg.rank, output=filename)
-        # result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        # if result.returncode != 0:
-        #     raise ExportError(f"FFmpeg failed for clip {filename}: {result.stderr[-500:]}")
-        #
-        # file_size = output_path.stat().st_size
-        # return ExportedClip(
-        #     asset_id=str(media.id),
-        #     segment_rank=seg.rank,
-        #     start=start,
-        #     end=end,
-        #     duration=duration,
-        #     output_path=output_path,
-        #     framing=strategy.name,
-        #     profile=seg.profile,
-        #     width=strategy.width,
-        #     height=strategy.height,
-        #     file_size_bytes=file_size,
-        #     created_at=datetime.now(timezone.utc),
-        # )
-        raise NotImplementedError("ClipExporter._export_one() not yet implemented")
+        cmd = [
+            self.ffmpeg_bin,
+            "-ss", str(start),
+            "-to", str(end),
+            "-i", str(media.local_path),
+            "-vf", vf_filter,
+            "-c:v", self.VIDEO_CODEC,
+            "-preset", self.VIDEO_PRESET,
+            "-crf", str(self.VIDEO_CRF),
+            "-c:a", self.AUDIO_CODEC,
+            "-b:a", self.AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            "-y",
+            str(output_path),
+        ]
+        log.info("export.ffmpeg_start", rank=seg.rank, output=filename)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise VaClipExportError(f"FFmpeg failed for clip {filename}: {result.stderr[-500:]}")
+
+        file_size = output_path.stat().st_size
+        log.info("export.ffmpeg_success", rank=seg.rank, output=filename, bytes=file_size)
+        return ExportedClip(
+            clip_id=str(uuid.uuid4()),
+            source_path=media.local_path,
+            output_path=output_path,
+            bounds=ClipBounds(start=start, end=end),
+            profile=media.profile,
+            width=strategy.width,
+            height=strategy.height,
+            framing=FramingStrategyEnum(strategy.name),
+            scored_segment=seg,
+            exported_at=datetime.now(timezone.utc),
+            metadata={},
+            file_size_bytes=file_size,
+        )
 
     def _save_manifest(self, clips: list["ExportedClip"], output_dir: Path) -> None:
         """Save a JSON manifest of all exported clips.
