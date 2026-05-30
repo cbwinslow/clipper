@@ -116,3 +116,25 @@ class IngestResult(IdentifiedModel):
     audio_path: Optional[str] = Field(None, description="Path to extracted audio file.")
     metadata: Optional[MediaMetadata] = Field(None, description="ffprobe metadata.")
     run_id: str = Field(description="Unique run identifier for artifact grouping.")
+
+
+class MediaAsset(IdentifiedModel):
+    """Normalized media asset after ingest stage.
+
+    Agent Notes:
+    - This is the main object passed between pipeline stages.
+    - Never add processing logic to this model.
+    """
+
+    source_url: str | None = Field(None, description="Original URL or None for local files")
+    local_path: Path = Field(description="Absolute path to the media file")
+    title: str = Field(description="Title from metadata or filename")
+    duration_seconds: float = Field(description="Total duration in seconds")
+    width: int = Field(description="Video width in pixels")
+    height: int = Field(description="Video height in pixels")
+    fps: float = Field(description="Frames per second")
+    codec: str = Field(description="Video codec name")
+    audio_path: Path | None = Field(None, description="Path to extracted audio WAV file")
+    format: str = Field(description="Container format (e.g., 'mp4', 'mkv')")
+    profile: str = Field(description="Content profile for scoring (e.g., 'podcast', 'gaming')")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp when asset was created")

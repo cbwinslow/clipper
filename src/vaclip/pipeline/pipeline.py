@@ -152,27 +152,26 @@ class VAClipPipeline:
             self._log_plan(source, _profile, _framing, from_stage, max_clips)
             return result
 
-        # TODO: implement stage execution
         # Stage 1: Ingest
-        # if from_stage.value <= PipelineStage.INGEST.value:
-        #     result = self._run_stage(PipelineStage.INGEST, result, lambda: self._ingest(source, _profile))
-        #
-        # Stage 2: Transcription
-        # if from_stage.value <= PipelineStage.TRANSCRIPTION.value:
-        #     result = self._run_stage(PipelineStage.TRANSCRIPTION, result,
-        #         lambda: self._transcribe(result.media))
-        #
-        # Stage 3: Scoring
-        # if from_stage.value <= PipelineStage.SCORING.value:
-        #     result = self._run_stage(PipelineStage.SCORING, result,
-        #         lambda: self._score(result.media, result.transcript, _profile))
-        #
-        # Stage 4: Export
-        # if from_stage.value <= PipelineStage.EXPORT.value:
-        #     result = self._run_stage(PipelineStage.EXPORT, result,
-        #         lambda: self._export(result.media, result.scored_segments, _framing, max_clips))
+        if from_stage.value <= PipelineStage.INGEST.value:
+            result = self._run_stage(PipelineStage.INGEST, result, lambda: self._ingest(source, _profile))
 
-        raise NotImplementedError("VAClipPipeline.run() not yet implemented")
+        # Stage 2: Transcription
+        if from_stage.value <= PipelineStage.TRANSCRIPTION.value:
+            result = self._run_stage(PipelineStage.TRANSCRIPTION, result,
+                lambda: self._transcribe(result.media))
+
+        # Stage 3: Scoring
+        if from_stage.value <= PipelineStage.SCORING.value:
+            result = self._run_stage(PipelineStage.SCORING, result,
+                lambda: self._score(result.media, result.transcript, _profile))
+
+        # Stage 4: Export
+        if from_stage.value <= PipelineStage.EXPORT.value:
+            result = self._run_stage(PipelineStage.EXPORT, result,
+                lambda: self._export(result.media, result.scored_segments, _framing, max_clips))
+
+        return result
 
     def _run_stage(
         self,
@@ -217,12 +216,14 @@ class VAClipPipeline:
         Returns:
             Ingested MediaAsset.
         """
-        # TODO: select adapter based on source type (URL vs local path)
-        # from vaclip.ingest.ytdlp_adapter import YtDlpAdapter
-        # from vaclip.ingest.local_adapter import LocalFileAdapter
-        # adapter = YtDlpAdapter() if source.startswith("http") else LocalFileAdapter()
-        # return adapter.ingest(source, profile=profile)
-        raise NotImplementedError()
+        from vaclip.ingest.local_adapter import LocalFileAdapter
+        from vaclip.ingest.ytdlp_adapter import YtDlpAdapter
+        
+        if source.startswith("http"):
+            adapter = YtDlpAdapter()
+        else:
+            adapter = LocalFileAdapter()
+        return adapter.ingest(source, profile=profile)
 
     def _transcribe(self, media: "MediaAsset") -> "Transcript":
         """Run the transcription stage.
@@ -233,11 +234,9 @@ class VAClipPipeline:
         Returns:
             Word-level Transcript.
         """
-        # TODO: get backend and transcribe
-        # from vaclip.transcription.whisper_backend import get_transcription_backend
-        # backend = get_transcription_backend(self.settings)
-        # return backend.transcribe(media.audio_path, str(media.id))
-        raise NotImplementedError()
+        from vaclip.transcription.whisper_backend import get_transcription_backend
+        backend = get_transcription_backend(self.settings)
+        return backend.transcribe(media.audio_path, str(media.id), self.settings.transcription.language)
 
     def _score(
         self,
@@ -255,12 +254,10 @@ class VAClipPipeline:
         Returns:
             Ranked list of ScoredSegments.
         """
-        # TODO: build segments from transcript and score
-        # from vaclip.scoring.highlight_scorer import CompositeScorer, get_profile
-        # scorer = CompositeScorer(profile=get_profile(profile))
-        # segments = self._build_segments(transcript)
-        # return scorer.score_all(segments, transcript, media)
-        raise NotImplementedError()
+        from vaclip.scoring.highlight_scorer import CompositeScorer, get_profile
+        scorer = CompositeScorer(profile=get_profile(profile))
+        segments = transcript.segments
+        return scorer.score_all(segments, transcript, media)
 
     def _export(
         self,
@@ -280,11 +277,9 @@ class VAClipPipeline:
         Returns:
             List of ExportedClip objects.
         """
-        # TODO: run clip exporter
-        # from vaclip.export.clip_exporter import ClipExporter
-        # exporter = ClipExporter(output_dir=self.settings.paths.output_dir)
-        # return exporter.export(media, segments, framing=framing, max_clips=max_clips)
-        raise NotImplementedError()
+        from vaclip.export.clip_exporter import ClipExporter
+        exporter = ClipExporter(output_dir=self.settings.paths.output_dir)
+        return exporter.export(media, segments, framing=framing, max_clips=max_clips)
 
     def _log_plan(
         self,
