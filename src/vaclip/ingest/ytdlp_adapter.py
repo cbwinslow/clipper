@@ -17,7 +17,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from vaclip.ingest.base import IngestAdapter
@@ -54,9 +54,9 @@ class YtDlpAdapter(IngestAdapter):
         self,
         output_dir: Path = Path("input"),
         cache_dir: Path = Path("cache"),
-        on_progress: Optional[ProgressCallback] = None,
-        on_complete: Optional[Callable[[MediaAsset], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None,
+        on_progress: ProgressCallback | None = None,
+        on_complete: Callable[[MediaAsset], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Initialize the yt-dlp adapter.
 

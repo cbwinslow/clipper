@@ -99,10 +99,10 @@ class IngestAdapter(ABC):
         if self._on_complete and result is not None:
             self._on_complete(result)
 
-        def _emit_error(self, exc: Exception) -> None:
-            """Emit an error event to the registered callback if any."""
-            if self._on_error:
-                self._on_error(exc)
+    def _emit_error(self, exc: Exception) -> None:
+        """Emit an error event to the registered callback if any."""
+        if self._on_error:
+            self._on_error(exc)
 
     def _get_settings(self) -> Settings:
         """Get the global settings object."""

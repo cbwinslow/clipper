@@ -65,9 +65,9 @@ class LocalFileAdapter(IngestAdapter):
         input_dir: Path = Path("input"),
         cache_dir: Path = Path("cache"),
         copy_files: bool = True,
-        on_progress: Optional[ProgressCallback] = None,
-        on_complete: Optional[Callable[[MediaAsset], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None,
+        on_progress: ProgressCallback | None = None,
+        on_complete: Callable[[MediaAsset], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Initialize the local file adapter.
 
