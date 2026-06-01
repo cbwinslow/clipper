@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -90,7 +89,7 @@ class TranscriptionBackend(ABC):
     """
 
     @abstractmethod
-    def transcribe(self, audio_path: str, run_id: str, language: Optional[str] = None) -> TranscriptResult:
+    def transcribe(self, audio_path: str, run_id: str, language: str | None = None) -> TranscriptResult:
         """Transcribe audio file and return a TranscriptResult.
 
         Implementations must:

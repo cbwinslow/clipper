@@ -63,14 +63,14 @@ vaclip run pipeline --source "video.mp4" --profile podcast
 ```bash
 # Start backend server (from clipper root)
 cd backend
-uv run main.py  # Runs FastAPI server on http://localhost:8000
+uv run main.py  # Runs FastAPI server on http://localhost:6000
 
 # In a new terminal, start frontend dev server (from clipper root)
 cd frontend
-npm run dev  # Runs Next.js dev server on http://localhost:3000
+npm run dev  # Runs Next.js dev server on http://localhost:6001
 ```
 
-Then open your browser to http://localhost:3000 to access the VAClip GUI.
+Then open your browser to http://localhost:6001 to access the VAClip GUI.
 
 ## Project Structure (Monorepo)
 

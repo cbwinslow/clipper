@@ -18,7 +18,7 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from vaclip.ingest.base import IngestAdapter
@@ -65,6 +65,9 @@ class LocalFileAdapter(IngestAdapter):
         input_dir: Path = Path("input"),
         cache_dir: Path = Path("cache"),
         copy_files: bool = True,
+        on_progress: Optional[ProgressCallback] = None,
+        on_complete: Optional[Callable[[MediaAsset], None]] = None,
+        on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         """Initialize the local file adapter.
 
@@ -73,7 +76,16 @@ class LocalFileAdapter(IngestAdapter):
             cache_dir: Directory for intermediate artifacts.
             copy_files: If True, copy source files to input_dir.
                         If False, reference them in-place (use with caution).
+            on_progress: Progress callback for reporting ingestion progress.
+            on_complete: Completion callback receiving the MediaAsset.
+            on_error: Error callback receiving exceptions.
         """
+        # Initialize base class with event callbacks
+        super().__init__(
+            on_progress=on_progress,
+            on_complete=on_complete,
+            on_error=on_error,
+        )
         self.input_dir = input_dir
         self.cache_dir = cache_dir
         self.copy_files = copy_files
@@ -174,7 +186,7 @@ class LocalFileAdapter(IngestAdapter):
         return dest
 
     def _extract_metadata(self, video_path: Path) -> dict[str, Any]:
-        """Use ffprobe to extract video metadata.
+        """Use ffprobe to extract video metadata with caching.
 
         Args:
             video_path: Path to the video file.
@@ -185,26 +197,33 @@ class LocalFileAdapter(IngestAdapter):
         Raises:
             VaClipIngestError: If ffprobe fails.
         """
+        # Try to get cached metadata first
+        cached_metadata = self._get_cached_ffprobe_metadata(video_path)
+        if cached_metadata is not None:
+            log.debug("ffprobe.metadata.cached", path=str(video_path))
+            return cached_metadata
+
+        # Cache miss - run ffprobe
         cmd = [
             "ffprobe", "-v", "quiet",
             "-print_format", "json",
             "-show_streams", "-show_format",
             str(video_path),
         ]
-        
+
         log.debug("ffprobe.metadata.start", cmd=" ".join(cmd), path=str(video_path))
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        
+
         if result.returncode != 0:
             log.error("ffprobe.metadata.failed", path=str(video_path), error=result.stderr, returncode=result.returncode)
             raise VaClipIngestError(f"ffprobe failed: {result.stderr}")
-        
+
         try:
             data = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
             log.error("ffprobe.metadata.json_decode_failed", path=str(video_path), error=str(exc), stdout=result.stdout[:200])
             raise VaClipIngestError(f"Failed to parse ffprobe output: {exc}") from exc
-        
+
         # Initialize default values
         duration = 0.0
         width = 0
@@ -212,13 +231,13 @@ class LocalFileAdapter(IngestAdapter):
         fps = 0.0
         codec = "unknown"
         format_name = "unknown"
-        
+
         # Extract format information
         if "format" in data:
             format_info = data["format"]
             duration = float(format_info.get("duration", 0))
             format_name = format_info.get("format_name", "unknown")
-        
+
         # Extract stream information
         if "streams" in data:
             for stream in data["streams"]:
@@ -226,7 +245,7 @@ class LocalFileAdapter(IngestAdapter):
                 if stream.get("codec_type") == "video":
                     width = int(stream.get("width", 0))
                     height = int(stream.get("height", 0))
-                    
+
                     # Parse frame rate (can be string like "30/0" or "30")
                     fps_str = stream.get("r_frame_rate", "0")
                     try:
@@ -237,17 +256,17 @@ class LocalFileAdapter(IngestAdapter):
                             fps = float(fps_str)
                     except (ValueError, ZeroDivisionError):
                         fps = 0.0
-                    
+
                     codec = stream.get("codec_name", "unknown")
                     break  # Use first video stream found
-            
+
             # If no video stream found, look for audio stream for codec at least
             if width == 0 or height == 0:
                 for stream in data["streams"]:
                     if stream.get("codec_type") == "audio" and codec == "unknown":
                         codec = stream.get("codec_name", "unknown")
                         break
-        
+
         # Ensure we have reasonable defaults
         if duration <= 0:
             duration = 0.0
@@ -261,7 +280,7 @@ class LocalFileAdapter(IngestAdapter):
             codec = "unknown"
         if format_name == "unknown":
             format_name = "unknown"
-        
+
         metadata = {
             "duration": duration,
             "width": width,
@@ -270,8 +289,11 @@ class LocalFileAdapter(IngestAdapter):
             "codec": codec,
             "format": format_name,
         }
-        
-        log.info("ffprobe.metadata.complete", 
+
+        # Cache the metadata for future use
+        self._cache_ffprobe_metadata(video_path, metadata)
+
+        log.info("ffprobe.metadata.complete",
                 path=str(video_path),
                 duration=duration,
                 width=width,
@@ -279,7 +301,7 @@ class LocalFileAdapter(IngestAdapter):
                 fps=fps,
                 codec=codec,
                 format=format_name)
-        
+
         return metadata
 
     def _extract_audio(self, video_path: Path, asset_id: str) -> Path:
@@ -296,7 +318,7 @@ class LocalFileAdapter(IngestAdapter):
             IngestError: If FFmpeg fails.
         """
         from vaclip.ingest.audio_extractor import extract_audio
-        
+
         audio_path = extract_audio(
             video_path=video_path,
             asset_id=asset_id,
@@ -304,7 +326,7 @@ class LocalFileAdapter(IngestAdapter):
             sample_rate=self.AUDIO_SAMPLE_RATE,
             channels=self.AUDIO_CHANNELS,
         )
-        
+
         log.info("ffmpeg.extract.audio.complete", asset_id=asset_id, audio_path=str(audio_path))
         return audio_path
 
@@ -332,7 +354,7 @@ class LocalFileAdapter(IngestAdapter):
         """
         # Extract title from metadata or use filename stem
         title = metadata.get("title") or local_path.stem
-        
+
         asset = MediaAsset(
             id=UUID(asset_id),
             source_url=str(source_path),
@@ -347,7 +369,7 @@ class LocalFileAdapter(IngestAdapter):
             format=metadata["format"],
             profile=profile,
         )
-        
+
         log.info(
             "asset.build.complete",
             asset_id=asset_id,
@@ -359,7 +381,7 @@ class LocalFileAdapter(IngestAdapter):
             codec=metadata["codec"],
             format=metadata["format"]
         )
-        
+
         return asset
 
     def _save_asset(self, asset: MediaAsset) -> None:

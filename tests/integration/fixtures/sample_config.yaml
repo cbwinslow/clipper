@@ -1,0 +1,73 @@
+# Test configuration for integration tests
+# Overrides from app.yaml to make tests fast and deterministic
+
+app:
+  name: vaclip-test
+  version: "0.1.0"
+  debug: false
+  log_level: INFO
+
+paths:
+  input_dir: ./input
+  output_dir: ./output
+  cache_dir: ./cache
+  models_dir: ./models
+  logs_dir: ./logs
+
+transcription:
+  backend: faster_whisper
+  model_size: tiny          # tiny model for speed
+  device: cpu               # force CPU to avoid GPU requirement in CI
+  compute_type: int8
+  language: en              # fix language to avoid auto-detect variability
+  word_timestamps: true
+  vad_filter: true
+  vad_parameters:
+    min_silence_duration_ms: 500
+  beam_size: 1              # reduce beam size for speed
+  best_of: 1
+  temperature: 0.0
+  condition_on_previous_text: false  # simpler for testing
+
+segmentation:
+  min_clip_duration: 2.0    # allow shorter clips for test media
+  max_clip_duration: 10.0   # keep clips short
+  window_step: 2.0
+  overlap_suppression_iou: 0.5
+  shot_detection:
+    enabled: false          # disable shot detection for simplicity in tests
+    backend: transnetv2
+    threshold: 0.5
+
+scoring:
+  default_profile: podcast
+  default_intent: highlight
+  top_k: 5                  # fewer candidates for speed
+  min_score: 0.1            # lower threshold to ensure we get some hits
+  use_embeddings: false     # disable embeddings to avoid model download
+  embedding_model: all-mpnet-base-v2
+  openrouter:
+    enabled: false          # keep local only for tests
+
+export:
+  default_format: source    # keep original resolution for simplicity
+  video_encoder: libx264
+  audio_encoder: aac
+  crf: 23                   # lower quality for speed
+  preset: ultrafast
+  nvenc_preset: p1
+  output_extension: mp4
+  filename_template: "{run_id}_{rank:02d}_{start:.0f}s_{end:.0f}s"
+  vertical:
+    width: 1080
+    height: 1920
+    strategy: pad
+  square:
+    width: 1080
+    height: 1080
+    strategy: pad
+
+artifacts:
+  save_all: true
+  compress: false
+  overwrite: true           # allow overwriting for test isolation

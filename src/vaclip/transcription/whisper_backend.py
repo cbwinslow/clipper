@@ -14,14 +14,12 @@ Agent Instructions:
 """
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
 from vaclip.utils.exceptions import VaClipTranscriptionError
 
 if TYPE_CHECKING:
-    from pathlib import Path
 
     from vaclip.config.settings import Settings
     from vaclip.models.schemas import Transcript
@@ -52,7 +50,7 @@ class WhisperBackend:
     COMPUTE_TYPE: str = "float16"   # optimal for RTX 3060
     MODELS_DIR: str = "models"
 
-    def __init__(self, model_name: Optional[str] = None) -> None:
+    def __init__(self, model_name: str | None = None) -> None:
         """Load the Whisper model. Downloads to models/ on first use.
 
         Args:
@@ -88,7 +86,7 @@ class WhisperBackend:
             log.error("transcription.model_load_failed", model=self._model_name, error=str(exc))
             raise VaClipTranscriptionError(f"Failed to load Whisper model: {exc}") from exc
 
-    def transcribe(self, audio_path: str, run_id: str, language: Optional[str] = None) -> "Transcript":
+    def transcribe(self, audio_path: str, run_id: str, language: str | None = None) -> Transcript:
         """Transcribe audio file and return a Transcript.
 
         Implementations must:
@@ -106,8 +104,8 @@ class WhisperBackend:
         Returns:
             Transcript with all segments populated.
         """
-        from vaclip.models.schemas import Transcript, Segment, Word
         from vaclip.config.settings import get_settings
+        from vaclip.models.schemas import Segment, Transcript, Word
 
         log.info(
             "transcription.start",
@@ -122,7 +120,6 @@ class WhisperBackend:
 
         try:
             # Import faster_whisper here to avoid slow startup if not used
-            from faster_whisper import WhisperModel
 
             segments, info = self._model.transcribe(
                 audio_path,
@@ -182,7 +179,7 @@ class WhisperBackend:
             log.error("transcription.failed", run_id=run_id, error=str(exc))
             raise VaClipTranscriptionError(f"Transcription failed: {exc}") from exc
 
-    def _save_transcript(self, transcript: "Transcript", settings: "Settings", run_id: str) -> None:
+    def _save_transcript(self, transcript: Transcript, settings: Settings, run_id: str) -> None:
         """Serialize transcript to JSON in the cache directory.
 
         Args:
@@ -209,7 +206,7 @@ class WhisperCPUBackend(WhisperBackend):
 
 
 def get_transcription_backend(
-    settings: Optional["Settings"] = None,
+    settings: Settings | None = None,
 ) -> WhisperBackend:
     """Return the best available transcription backend for the current hardware.
 

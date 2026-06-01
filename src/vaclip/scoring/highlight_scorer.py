@@ -7,14 +7,13 @@ signals via a configurable composite scorer.
 from __future__ import annotations
 
 import json
-import pathlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
-from vaclip.scoring.base import BaseScorer
 from vaclip.models.schemas import HighlightType
+from vaclip.scoring.base import BaseScorer
 
 if TYPE_CHECKING:
     from vaclip.models.media import MediaAsset, ScoredSegment, Segment, Transcript
@@ -109,7 +108,7 @@ class TranscriptScorer(BaseScorer):
         "omg", "no way", "what",
     })
 
-    def score(self, segment: Segment, media_path: Optional[Path] = None) -> float:
+    def score(self, segment: Segment, media_path: Path | None = None) -> float:
         """Score a segment based on transcript text signals."""
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -129,7 +128,10 @@ class TranscriptScorer(BaseScorer):
 
         duration = segment.end - segment.start
         words_per_second = word_count / duration if duration > 0 else 0.0
-        pacing_score = min(words_per_second / 5.0, 1.0) if words_per_second >= 2.0 else words_per_second / 2.0
+        if words_per_second >= 2.0:
+            pacing_score = min(words_per_second / 5.0, 1.0)
+        else:
+            pacing_score = words_per_second / 2.0
         pacing_score = max(0.0, min(pacing_score, 1.0))
 
         analyzer = SentimentIntensityAnalyzer()
@@ -160,7 +162,7 @@ class AudioEnergyScorer(BaseScorer):
 
     SILENCE_THRESHOLD_DB: float = -40.0
 
-    def score(self, segment: Segment, media_path: Optional[Path] = None) -> float:
+    def score(self, segment: Segment, media_path: Path | None = None) -> float:
         """Score a segment based on audio energy features."""
         if media_path is None:
             log.warning("scoring.audio_path_missing", scorer="AudioEnergyScorer")
@@ -219,27 +221,95 @@ class AudioEnergyScorer(BaseScorer):
             return final_score
 
         except Exception as e:
-            log.error("scoring.audio_error", error=str(e), scorer="AudioEnergyScorer", segment_id=segment.id)
+            log.error(
+                "scoring.audio_error",
+                error=str(e),
+                scorer="AudioEnergyScorer",
+                segment_id=segment.id,
+            )
             return 0.0
 
 
 class VisualMotionScorer(BaseScorer):
     """Score segments based on visual activity in video frames.
 
-    Samples frames from the video and computes optical flow to quantify
-    motion, then detects scene cuts via histogram differences.
+    Samples frames from the video and computes frame differences to quantify
+    motion intensity, then normalizes to a 0-1 score.
     """
 
     SAMPLE_FPS: float = 2.0
 
-    def score(self, segment: Segment, media_path: Optional[Path] = None) -> float:
+    def score(self, segment: Segment, media_path: Path | None = None) -> float:
         """Score a segment based on visual motion and scene changes."""
         if media_path is None:
             log.warning("scoring.video_path_missing", scorer="VisualMotionScorer")
             return 0.0
 
-        log.warning("scoring.visual_motion_not_implemented", segment_id=segment.id)
-        return 0.0
+        try:
+            import cv2
+            import numpy as np
+
+            duration = segment.end - segment.start
+            if duration <= 0:
+                return 0.0
+
+            cap = cv2.VideoCapture(str(media_path))
+            if not cap.isOpened():
+                log.error("scoring.visual_video_open_failed", path=str(media_path))
+                return 0.0
+
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+
+            # Calculate frame indices to sample
+            start_frame = int(segment.start * fps)
+            end_frame = int(segment.end * fps)
+            sample_interval = max(1, int(fps / self.SAMPLE_FPS))
+
+            motion_scores = []
+            prev_frame = None
+
+            for frame_idx in range(start_frame, min(end_frame, total_frames), sample_interval):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                if prev_frame is not None:
+                    diff = cv2.absdiff(gray, prev_frame)
+                    motion = np.mean(diff) / 255.0
+                    motion_scores.append(motion)
+
+                prev_frame = gray
+
+            cap.release()
+
+            if not motion_scores:
+                return 0.0
+
+            # Average motion intensity, then normalize to 0-1
+            avg_motion = float(np.mean(motion_scores))
+            # Boost contrast: typical motion values are 0.01-0.1, scale up
+            score = min(avg_motion * 5.0, 1.0)
+
+            log.debug(
+                "scoring.visual_motion_score",
+                segment_id=segment.id,
+                frame_count=len(motion_scores),
+                avg_motion=avg_motion,
+                final_score=score,
+            )
+
+            return score
+
+        except ImportError:
+            log.warning("scoring.opencv_not_installed")
+            return 0.0
+        except Exception as e:
+            log.error("scoring.visual_error", error=str(e), segment_id=segment.id)
+            return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +333,9 @@ class CompositeScorer:
     def score_all(
         self,
         segments: list[Segment],
-        transcript: "Transcript",  # noqa: F841 - kept for future extensibility
-        media: "MediaAsset",
-    ) -> list["ScoredSegment"]:
+        transcript: Transcript,  # noqa: F841 - kept for future extensibility
+        media: MediaAsset,
+    ) -> list[ScoredSegment]:
         """Score all segments and return them ranked by composite score."""
         from vaclip.models.media import ScoredSegment, SignalScore
 
@@ -401,3 +471,58 @@ class CompositeScorer:
             return HighlightType.PEAK_ENERGY
 
         return HighlightType.GENERIC
+
+
+# ---------------------------------------------------------------------------
+# Signal Normalisation Helpers
+# ---------------------------------------------------------------------------
+
+
+def normalise_minmax(values: list[float]) -> list[float]:
+    """Normalize values to 0-1 range using min-max scaling.
+
+    Args:
+        values: List of raw scores to normalize.
+
+    Returns:
+        List of normalized scores in [0.0, 1.0] range.
+        Returns zeros if all values are identical or list is empty.
+    """
+    if not values:
+        return []
+
+    min_val = min(values)
+    max_val = max(values)
+
+    if max_val == min_val:
+        return [0.0] * len(values)
+
+    return [(v - min_val) / (max_val - min_val) for v in values]
+
+
+def normalise_zscore(values: list[float]) -> list[float]:
+    """Normalize values using z-score (mean=0.5, std=0.2) scaling.
+
+    Args:
+        values: List of raw scores to normalize.
+
+    Returns:
+        List of normalized scores. Values beyond ±2σ are clamped to [0.0, 1.0].
+        Returns zeros if std is zero or list is empty.
+    """
+    import numpy as np
+
+    if not values:
+        return []
+
+    arr = np.array(values, dtype=np.float64)
+    mean = np.mean(arr)
+    std = np.std(arr)
+
+    if std == 0:
+        return [0.0] * len(values)
+
+    normalized = (arr - mean) / std
+    # Scale to mean=0.5, std=0.2, then clamp
+    result = (normalized / 2.0) + 0.5
+    return [float(max(0.0, min(1.0, v))) for v in result]

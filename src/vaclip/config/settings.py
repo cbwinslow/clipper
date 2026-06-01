@@ -127,10 +127,8 @@ class Settings:
     logging: LoggingSettings = field(default_factory=LoggingSettings)
 
     @classmethod
-    def from_yaml(cls, path: Path = Path("configs/app.yaml")) -> "Settings":
+    def from_yaml(cls, path: Path = Path("configs/app.yaml")) -> Settings:
         """Load settings from a YAML file, merging with defaults."""
-        # TODO: implement YAML loading and merge with dataclass defaults
-        # Use dacite or manual dict-to-dataclass conversion
         if not path.exists():
             return cls()
         with open(path) as f:
@@ -138,22 +136,103 @@ class Settings:
         return cls._from_dict(data)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """Override settings from environment variables.
 
         Environment variable format: VACLIP__SECTION__KEY
         Example: VACLIP__TRANSCRIPTION__MODEL_NAME=base
         """
-        # TODO: implement env var override logic
         settings = cls.from_yaml()
+        settings = cls._apply_env_overrides(settings)
         return settings
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "Settings":
+    def _apply_env_overrides(cls, settings: Settings) -> Settings:
+        """Apply environment variable overrides to settings."""
+        prefix = "VACLIP__"
+        for key, value in os.environ.items():
+            if not key.startswith(prefix):
+                continue
+            path = key[len(prefix):].lower().split("__")
+            if len(path) != 2:
+                continue
+
+            section, field = path
+            value = cls._convert_env_value(value)
+
+            if section == "paths":
+                if hasattr(settings.paths, field):
+                    setattr(settings.paths, field, Path(value) if field.endswith("_dir") else value)
+            elif section == "transcription":
+                if hasattr(settings.transcription, field):
+                    setattr(settings.transcription, field, value)
+            elif section == "scoring":
+                if hasattr(settings.scoring, field):
+                    setattr(settings.scoring, field, value)
+            elif section == "export":
+                if hasattr(settings.export, field):
+                    setattr(settings.export, field, value)
+            elif section == "artifacts":
+                if hasattr(settings.artifacts, field):
+                    setattr(settings.artifacts, field, value)
+            elif section == "logging":
+                if hasattr(settings.logging, field):
+                    setattr(settings.logging, field, value)
+
+        return settings
+
+    @staticmethod
+    def _convert_env_value(value: str) -> Any:
+        """Convert environment variable string to appropriate type."""
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        try:
+            return int(value)
+        except ValueError:
+            pass
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        return value
+
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> Settings:
         """Construct Settings from a nested dictionary (e.g., from YAML)."""
-        # TODO: implement recursive dataclass construction from dict
-        # Consider using dacite library for nested dataclass hydration
-        return cls()
+        settings = cls()
+
+        if "paths" in data:
+            for key, value in data["paths"].items():
+                if hasattr(settings.paths, key):
+                    setattr(settings.paths, key, Path(value) if isinstance(value, str) else value)
+
+        if "transcription" in data:
+            for key, value in data["transcription"].items():
+                if hasattr(settings.transcription, key):
+                    setattr(settings.transcription, key, value)
+
+        if "scoring" in data:
+            for key, value in data["scoring"].items():
+                if hasattr(settings.scoring, key):
+                    setattr(settings.scoring, key, value)
+
+        if "export" in data:
+            for key, value in data["export"].items():
+                if hasattr(settings.export, key):
+                    setattr(settings.export, key, value)
+
+        if "artifacts" in data:
+            for key, value in data["artifacts"].items():
+                if hasattr(settings.artifacts, key):
+                    setattr(settings.artifacts, key, value)
+
+        if "logging" in data:
+            for key, value in data["logging"].items():
+                if hasattr(settings.logging, key):
+                    path_value = Path(value) if key == "log_file" and value else value
+                    setattr(settings.logging, key, path_value)
+
+        return settings
 
     def validate(self) -> None:
         """Run post-load validation checks.
@@ -161,27 +240,63 @@ class Settings:
         Raises:
             ValueError: if any required setting is invalid
         """
-        # TODO: validate device is "cuda" or "cpu"
-        # TODO: validate crf is 0-51
-        # TODO: validate weight sum is approximately 1.0
-        # TODO: warn if cuda requested but not available
-        pass
+        if self.transcription.device not in ("cuda", "cpu"):
+            raise ValueError(
+                f"Invalid device: {self.transcription.device}. Must be 'cuda' or 'cpu'."
+            )
+
+        if not 0 <= self.export.video_crf <= 51:
+            raise ValueError(f"Invalid CRF value: {self.export.video_crf}. Must be 0-51.")
+
+        weight_sum = (
+            self.scoring.transcript_weight
+            + self.scoring.audio_weight
+            + self.scoring.visual_weight
+        )
+        if abs(weight_sum - 1.0) > 0.01:
+            raise ValueError(f"Scoring weights must sum to 1.0, got {weight_sum}")
+
+        try:
+            import torch
+            if self.transcription.device == "cuda" and not torch.cuda.is_available():
+                import warnings
+                warnings.warn(
+                    "CUDA requested but not available. Falling back to CPU.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                self.transcription.device = "cpu"
+                self.transcription.compute_type = "int8"
+        except ImportError:
+            pass
 
 
 # Module-level singleton - initialized lazily
 _settings: Settings | None = None
 
 
+def load_settings(config_path: Path | None = None) -> Settings:
+    """Load Settings, optionally overriding with a specific config file.
+
+    Args:
+        config_path: Path to a YAML config file. If None, defaults to the
+            standard config location used by Settings.from_yaml().
+    """
+    if config_path is not None:
+        return Settings.from_yaml(config_path)
+    return Settings.from_env()
+
+
 def get_settings() -> Settings:
     """Return the global Settings singleton, loading from YAML on first call."""
     global _settings  # noqa: PLW0603
     if _settings is None:
-        _settings = Settings.from_env()
+        _settings = load_settings()
         _settings.validate()
     return _settings
 
 
 def reset_settings() -> None:
-    """Reset the settings singleton (primarily for testing)."""
+    """Reset the global settings singleton. Useful for testing."""
     global _settings  # noqa: PLW0603
     _settings = None

@@ -159,10 +159,42 @@ class TestSignalNormalisation:
     """
 
     def test_minmax_normalise_full_range(self) -> None:
-        pytest.skip("normalise_minmax not yet implemented")
+        from vaclip.scoring.highlight_scorer import normalise_minmax
+
+        result = normalise_minmax([0.0, 0.5, 1.0])
+        assert result == pytest.approx([0.0, 0.5, 1.0])
 
     def test_minmax_single_value_returns_zero(self) -> None:
-        pytest.skip("normalise_minmax edge case not yet implemented")
+        from vaclip.scoring.highlight_scorer import normalise_minmax
+
+        result = normalise_minmax([0.7])
+        assert result == [0.0]
+
+    def test_minmax_empty_list_returns_empty(self) -> None:
+        from vaclip.scoring.highlight_scorer import normalise_minmax
+
+        result = normalise_minmax([])
+        assert result == []
 
     def test_zscore_normalise_zero_std_returns_zeros(self) -> None:
-        pytest.skip("normalise_zscore edge case not yet implemented")
+        from vaclip.scoring.highlight_scorer import normalise_zscore
+
+        result = normalise_zscore([0.5, 0.5, 0.5])
+        assert result == [0.0, 0.0, 0.0]
+
+    def test_zscore_normalise_centered(self) -> None:
+        from vaclip.scoring.highlight_scorer import normalise_zscore
+
+        result = normalise_zscore([0.0, 0.5, 1.0])
+        # mean=0.5, std≈0.289
+        # (0.0-0.5)/0.289/2+0.5 ≈ 0.33
+        # (0.5-0.5)/0.289/2+0.5 = 0.5
+        # (1.0-0.5)/0.289/2+0.5 ≈ 0.67
+        assert len(result) == 3
+        assert all(0.0 <= v <= 1.0 for v in result)
+
+    def test_zscore_empty_list_returns_empty(self) -> None:
+        from vaclip.scoring.highlight_scorer import normalise_zscore
+
+        result = normalise_zscore([])
+        assert result == []

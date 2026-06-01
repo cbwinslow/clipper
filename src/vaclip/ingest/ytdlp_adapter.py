@@ -14,7 +14,6 @@ Agent Instructions:
 """
 from __future__ import annotations
 
-import json
 import subprocess
 import uuid
 from pathlib import Path
@@ -55,13 +54,25 @@ class YtDlpAdapter(IngestAdapter):
         self,
         output_dir: Path = Path("input"),
         cache_dir: Path = Path("cache"),
+        on_progress: Optional[ProgressCallback] = None,
+        on_complete: Optional[Callable[[MediaAsset], None]] = None,
+        on_error: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         """Initialize the yt-dlp adapter.
 
         Args:
             output_dir: Where to store downloaded video files.
             cache_dir: Where to store intermediate artifacts (audio, metadata).
+            on_progress: Progress callback for reporting ingestion progress.
+            on_complete: Completion callback receiving the MediaAsset.
+            on_error: Error callback receiving exceptions.
         """
+        # Initialize base class with event callbacks
+        super().__init__(
+            on_progress=on_progress,
+            on_complete=on_complete,
+            on_error=on_error,
+        )
         self.output_dir = output_dir
         self.cache_dir = cache_dir
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -133,7 +144,7 @@ class YtDlpAdapter(IngestAdapter):
             IngestError: If yt-dlp reports a download error.
         """
         import yt_dlp
-        
+
         ydl_opts = {
             "format": self.DEFAULT_FORMAT,
             "outtmpl": str(output_dir / f"{asset_id}.%(ext)s"),
@@ -141,7 +152,7 @@ class YtDlpAdapter(IngestAdapter):
             "quiet": True,
             "no_warnings": False,
         }
-        
+
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -177,13 +188,13 @@ class YtDlpAdapter(IngestAdapter):
             "-ac", str(self.AUDIO_CHANNELS),
             str(audio_path),
         ]
-        
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode != 0:
                 log.error("ffmpeg.extract.audio.failed", asset_id=asset_id, error=result.stderr, returncode=result.returncode)
                 raise VaClipIngestError(f"FFmpeg audio extraction failed: {result.stderr}")
-            
+
             log.info("ffmpeg.extract.audio.complete", asset_id=asset_id, audio_path=str(audio_path))
             return audio_path
         except Exception as exc:
@@ -215,12 +226,12 @@ class YtDlpAdapter(IngestAdapter):
         # Extract metadata from info dict with fallbacks
         title = info.get('title') or info.get('fulltitle') or video_path.stem
         duration_seconds = float(info.get('duration', 0))
-        
+
         # Video properties - try to get from info dict first, then fall back to format info
         width = info.get('width') or 0
         height = info.get('height') or 0
         fps = info.get('fps') or 0.0
-        
+
         # If we don't have width/height/fps directly, try to get from format
         if width == 0 or height == 0 or fps == 0.0:
             formats = info.get('formats', [])
@@ -233,17 +244,17 @@ class YtDlpAdapter(IngestAdapter):
                         fps = fps or fmt.get('fps', 0.0)
                         if width > 0 and height > 0:
                             break
-        
+
         # Codec - try video codec first
         codec = info.get('vcodec') or info.get('video_codec') or 'unknown'
         if codec == 'none':
             codec = 'unknown'
-            
+
         # Format/container
         format_name = info.get('format') or info.get('ext') or 'mp4'
         if format_name == 'none':
             format_name = 'mp4'
-        
+
         # Ensure we have reasonable defaults
         if width <= 0:
             width = 1920  # Default to common HD width
@@ -253,7 +264,7 @@ class YtDlpAdapter(IngestAdapter):
             fps = 30.0   # Default to common FPS
         if duration_seconds <= 0:
             duration_seconds = 0.0  # Will be corrected if possible
-        
+
         asset = MediaAsset(
             id=UUID(asset_id),
             source_url=source_url,
@@ -268,7 +279,7 @@ class YtDlpAdapter(IngestAdapter):
             format=format_name,
             profile=profile,
         )
-        
+
         log.info(
             "asset.build.complete",
             asset_id=asset_id,
@@ -280,7 +291,7 @@ class YtDlpAdapter(IngestAdapter):
             codec=codec,
             format=format_name
         )
-        
+
         return asset
 
     def _save_asset(self, asset: MediaAsset) -> None:

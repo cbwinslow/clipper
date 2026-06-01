@@ -118,12 +118,12 @@ Each task is self-contained and suitable for hand-off to an AI coding agent.
 
 | ID | Status | File | Description |
 |----|--------|------|-------------|
-| SC-01 | `[~]` | `src/vaclip/scoring/highlight_scorer.py` | Multi-signal scorer with profiles |
-| SC-02 | `[ ]` | `src/vaclip/scoring/signals/audio_energy.py` | RMS energy signal |
-| SC-03 | `[ ]` | `src/vaclip/scoring/signals/sentiment.py` | Sentiment signal (transformers) |
-| SC-04 | `[ ]` | `src/vaclip/scoring/signals/keyword.py` | Keyword density signal |
-| SC-05 | `[ ]` | `src/vaclip/scoring/signals/laughter.py` | Laughter/audience detection |
-| SC-06 | `[ ]` | `src/vaclip/scoring/profiles.py` | Profile weight configs |
+|| SC-01 | `[x]` | `src/vaclip/scoring/highlight_scorer.py` | Multi-signal scorer with profiles |
+|| SC-02 | `[x]` | `src/vaclip/scoring/base.py` | AudioEnergyScorer (librosa) |
+|| SC-03 | `[x]` | `src/vaclip/scoring/highlight_scorer.py` | VisualMotionScorer (OpenCV) |
+|| SC-04 | `[ ]` | `src/vaclip/scoring/signals/keyword.py` | Keyword density signal |
+|| SC-05 | `[ ]` | `src/vaclip/scoring/signals/laughter.py` | Laughter/audience detection |
+|| SC-06 | `[x]` | `src/vaclip/scoring/highlight_scorer.py` | Profile weight configs |
 
 **Task SC-01 — HighlightScorer (fill scaffold)**
 - Objective: Implement `score(transcript, media_meta) -> list[ScoredSegment]`
@@ -177,9 +177,9 @@ Each task is self-contained and suitable for hand-off to an AI coding agent.
 
 | ID | Status | File | Description |
 |----|--------|------|-------------|
-| C-01 | `[~]` | `src/vaclip/cli/commands.py` | Typer CLI commands |
-| C-02 | `[ ]` | `src/vaclip/cli/progress.py` | Rich progress bar helpers |
-| C-03 | `[ ]` | `src/vaclip/cli/output.py` | Rich table/panel output formatters |
+|| C-01 | `[x]` | `src/vaclip/cli/commands.py` | Typer CLI commands (run, plan, info, clean) |
+|| C-02 | `[ ]` | `src/vaclip/cli/progress.py` | Rich progress bar helpers |
+|| C-03 | `[ ]` | `src/vaclip/cli/output.py` | Rich table/panel output formatters |
 
 **Task C-01 — Wire CLI to Pipeline**
 - Objective: Replace `NotImplementedError` stubs in `cmd_run` and `cmd_plan`

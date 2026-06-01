@@ -38,6 +38,37 @@ def fixture_dir() -> Path:
     return Path(__file__).parent / "fixtures"
 
 
+# ============================================================
+# Checkpoint cleanup
+# ============================================================
+
+@pytest.fixture(autouse=True)
+def cleanup_checkpoint():
+    """Remove checkpoint file before and after each test."""
+    checkpoint_path = Path("cache/pipeline_checkpoint.json")
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+    yield
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+
+
+# ============================================================
+# Mock fixtures
+# ============================================================
+
+@pytest.fixture(autouse=True)
+def mock_shot_detector(monkeypatch):
+    """Mock ShotDetector to avoid model download during tests."""
+    from vaclip.segmentation import shot_detector as sd
+
+    class MockDetector:
+        def detect(self, *args, **kwargs):
+            return []
+
+    monkeypatch.setattr(sd, "ShotDetector", lambda *args, **kwargs: MockDetector())
+
+
 @pytest.fixture
 def sample_audio_path(fixture_dir: Path) -> Path:
     """Return path to a short sample audio WAV file for transcription tests.

@@ -14,13 +14,14 @@ Agent Instructions:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from pathlib import Path
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
-from vaclip.utils.exceptions import VaClipError
+from vaclip.models.pipeline import PipelineStage as ModelPipelineStage
+from vaclip.pipeline.checkpoint import load_checkpoint, save_checkpoint
 
 if TYPE_CHECKING:
     from vaclip.config.settings import Settings
@@ -51,12 +52,12 @@ class PipelineResult:
         completed_stages: Set of stages that ran successfully.
     """
 
-    media: "MediaAsset | None" = None
-    transcript: "Transcript | None" = None
-    scored_segments: "list[ScoredSegment]" = field(default_factory=list)
-    clips: "list[ExportedClip]" = field(default_factory=list)
+    media: MediaAsset | None = None
+    transcript: Transcript | None = None
+    scored_segments: list[ScoredSegment] = field(default_factory=list)
+    clips: list[ExportedClip] = field(default_factory=list)
     elapsed_seconds: dict[str, float] = field(default_factory=dict)
-    completed_stages: set[PipelineStage] = field(default_factory=set)
+    completed_stages: set[ModelPipelineStage] = field(default_factory=set)
 
 
 # Type alias for stage event callbacks
@@ -88,7 +89,7 @@ class VAClipPipeline:
 
     def __init__(
         self,
-        settings: "Settings | None" = None,
+        settings: Settings | None = None,
         on_stage_start: StageCallback | None = None,
         on_stage_complete: StageCallback | None = None,
         on_stage_error: StageCallback | None = None,
@@ -134,7 +135,11 @@ class VAClipPipeline:
         Raises:
             VaClipError: If any non-recoverable pipeline error occurs.
         """
+        # Load checkpoint for resume functionality
+        checkpoint = load_checkpoint()
         result = PipelineResult()
+        # Update result with completed stages from checkpoint
+        result.completed_stages = set(checkpoint.completed_stages)
         _profile = profile or self.settings.scoring.default_profile
         _framing = framing or self.settings.export.default_framing
 
@@ -154,22 +159,46 @@ class VAClipPipeline:
 
         # Stage 1: Ingest
         if from_stage.value <= PipelineStage.INGEST.value:
-            result = self._run_stage(PipelineStage.INGEST, result, lambda: self._ingest(source, _profile))
+            model_ingest_stage = ModelPipelineStage.INGEST
+            if not checkpoint.is_stage_completed(model_ingest_stage):
+                result = self._run_stage(PipelineStage.INGEST, result, lambda: self._ingest(source, _profile), "media")
+                checkpoint.add_stage(model_ingest_stage)
+                save_checkpoint(checkpoint)
+            else:
+                log.info("pipeline.stage_skipped", stage="INGEST", reason="already_completed")
 
         # Stage 2: Transcription
         if from_stage.value <= PipelineStage.TRANSCRIPTION.value:
-            result = self._run_stage(PipelineStage.TRANSCRIPTION, result,
-                lambda: self._transcribe(result.media))
+            model_transcription_stage = ModelPipelineStage.TRANSCRIPTION
+            if not checkpoint.is_stage_completed(model_transcription_stage):
+                result = self._run_stage(PipelineStage.TRANSCRIPTION, result,
+                    lambda: self._transcribe(result.media), "transcript")
+                checkpoint.add_stage(model_transcription_stage)
+                save_checkpoint(checkpoint)
+            else:
+                log.info("pipeline.stage_skipped", stage="TRANSCRIPTION", reason="already_completed")
 
         # Stage 3: Scoring
         if from_stage.value <= PipelineStage.SCORING.value:
-            result = self._run_stage(PipelineStage.SCORING, result,
-                lambda: self._score(result.media, result.transcript, _profile))
+            model_scoring_stage = ModelPipelineStage.SCORING
+            if not checkpoint.is_stage_completed(model_scoring_stage):
+                result = self._run_stage(PipelineStage.SCORING, result,
+                    lambda: self._score(result.media, result.transcript, _profile), "scored_segments")
+                checkpoint.add_stage(model_scoring_stage)
+                save_checkpoint(checkpoint)
+            else:
+                log.info("pipeline.stage_skipped", stage="SCORING", reason="already_completed")
 
         # Stage 4: Export
         if from_stage.value <= PipelineStage.EXPORT.value:
-            result = self._run_stage(PipelineStage.EXPORT, result,
-                lambda: self._export(result.media, result.scored_segments, _framing, max_clips))
+            model_export_stage = ModelPipelineStage.EXPORT
+            if not checkpoint.is_stage_completed(model_export_stage):
+                result = self._run_stage(PipelineStage.EXPORT, result,
+                    lambda: self._export(result.media, result.scored_segments, _framing, max_clips), "clips")
+                checkpoint.add_stage(model_export_stage)
+                save_checkpoint(checkpoint)
+            else:
+                log.info("pipeline.stage_skipped", stage="EXPORT", reason="already_completed")
 
         return result
 
@@ -178,6 +207,7 @@ class VAClipPipeline:
         stage: PipelineStage,
         result: PipelineResult,
         fn: Callable[[], None],
+        result_attr: str,
     ) -> PipelineResult:
         """Execute a single pipeline stage with timing and event hooks.
 
@@ -185,6 +215,7 @@ class VAClipPipeline:
             stage: The stage being executed.
             result: Current pipeline result (mutated in place).
             fn: Callable that executes the stage logic.
+            result_attr: Attribute name on result to set with return value.
 
         Returns:
             Updated PipelineResult.
@@ -193,7 +224,8 @@ class VAClipPipeline:
         log.info("pipeline.stage_start", stage=stage.name)
         t0 = time.perf_counter()
         try:
-            fn()
+            stage_result = fn()
+            setattr(result, result_attr, stage_result)
             elapsed = time.perf_counter() - t0
             result.elapsed_seconds[stage.name] = elapsed
             result.completed_stages.add(stage)
@@ -206,7 +238,7 @@ class VAClipPipeline:
             raise
         return result
 
-    def _ingest(self, source: str, profile: str) -> "MediaAsset":
+    def _ingest(self, source: str, profile: str) -> MediaAsset:
         """Run the ingest stage.
 
         Args:
@@ -218,14 +250,14 @@ class VAClipPipeline:
         """
         from vaclip.ingest.local_adapter import LocalFileAdapter
         from vaclip.ingest.ytdlp_adapter import YtDlpAdapter
-        
+
         if source.startswith("http"):
             adapter = YtDlpAdapter()
         else:
             adapter = LocalFileAdapter()
         return adapter.ingest(source, profile=profile)
 
-    def _transcribe(self, media: "MediaAsset") -> "Transcript":
+    def _transcribe(self, media: MediaAsset) -> Transcript:
         """Run the transcription stage.
 
         Args:
@@ -240,10 +272,10 @@ class VAClipPipeline:
 
     def _score(
         self,
-        media: "MediaAsset",
-        transcript: "Transcript",
+        media: MediaAsset,
+        transcript: Transcript,
         profile: str,
-    ) -> "list[ScoredSegment]":
+    ) -> list[ScoredSegment]:
         """Run the scoring stage.
 
         Args:
@@ -261,11 +293,11 @@ class VAClipPipeline:
 
     def _export(
         self,
-        media: "MediaAsset",
-        segments: "list[ScoredSegment]",
+        media: MediaAsset,
+        segments: list[ScoredSegment],
         framing: str,
         max_clips: int,
-    ) -> "list[ExportedClip]":
+    ) -> list[ExportedClip]:
         """Run the export stage.
 
         Args:

@@ -9,11 +9,10 @@ Agent Notes:
 
 from __future__ import annotations
 
+import pathlib
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 
 from vaclip.models.media import Segment
-import pathlib
 
 
 class BaseScorer(ABC):
@@ -27,7 +26,7 @@ class BaseScorer(ABC):
     """
 
     @abstractmethod
-    def score(self, segment: Segment, media_path: Optional[pathlib.Path] = None) -> float:
+    def score(self, segment: Segment, media_path: pathlib.Path | None = None) -> float:
         """Score a segment and return a float score.
 
         Implementations must:

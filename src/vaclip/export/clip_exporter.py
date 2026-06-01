@@ -14,21 +14,25 @@ Agent Instructions:
 """
 from __future__ import annotations
 
-import json
+import hashlib
 import subprocess
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import orjson
+
+from vaclip.export.subtitle import burn_subtitles
 from vaclip.logging.setup import get_logger
 from vaclip.models.media import ExportedClip
-from vaclip.models.schemas import ClipBounds, FramingStrategy as FramingStrategyEnum
+from vaclip.models.schemas import ClipBounds
+from vaclip.models.schemas import FramingStrategy as FramingStrategyEnum
 from vaclip.utils.exceptions import VaClipExportError
 
 if TYPE_CHECKING:
-    from vaclip.models.media import ExportedClip, MediaAsset, ScoredSegment
+    from vaclip.models.media import MediaAsset, ScoredSegment
 
 log = get_logger(__name__)
 
@@ -63,7 +67,7 @@ class FramingStrategy(ABC):
         ...
 
     @abstractmethod
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Build the FFmpeg -vf filter string for this framing.
 
         Args:
@@ -82,7 +86,7 @@ class WideFramingStrategy(FramingStrategy):
     width = 1920
     height = 1080
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Scale to 1920x1080, padding letterbox if needed."""
         return "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black"
 
@@ -94,7 +98,7 @@ class VerticalFramingStrategy(FramingStrategy):
     width = 1080
     height = 1920
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Crop center column from landscape source, then scale to 1080x1920."""
         # Crop the center ih*9/16 width strip, then scale
         return "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920"
@@ -107,7 +111,7 @@ class SquareFramingStrategy(FramingStrategy):
     width = 1080
     height = 1080
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Crop center square from source, then scale to 1080x1080."""
         return "crop=ih:ih:(iw-ih)/2:0,scale=1080:1080"
 
@@ -186,11 +190,12 @@ class ClipExporter:
 
     def export(
         self,
-        media: "MediaAsset",
-        segments: list["ScoredSegment"],
+        media: MediaAsset,
+        segments: list[ScoredSegment],
         framing: str = "wide",
         max_clips: int = 10,
-    ) -> list["ExportedClip"]:
+        caption: str | None = None,
+    ) -> list[ExportedClip]:
         """Export top-N segments as clips with the given framing strategy.
 
         Args:
@@ -198,6 +203,7 @@ class ClipExporter:
             segments: Scored and ranked segments (will take top max_clips).
             framing: Framing strategy name.
             max_clips: Maximum number of clips to export.
+            caption: Optional text to burn as subtitles on all exported clips.
 
         Returns:
             List of ExportedClip objects with output paths and metadata.
@@ -217,10 +223,10 @@ class ClipExporter:
             max_clips=max_clips,
         )
 
-        clips: list["ExportedClip"] = []
+        clips: list[ExportedClip] = []
         for seg in segments[:max_clips]:
             try:
-                clip = self._export_one(media, seg, strategy, asset_output_dir)
+                clip = self._export_one(media, seg, strategy, asset_output_dir, caption)
                 clips.append(clip)
             except VaClipExportError as exc:
                 log.error(
@@ -236,11 +242,12 @@ class ClipExporter:
 
     def _export_one(
         self,
-        media: "MediaAsset",
-        seg: "ScoredSegment",
+        media: MediaAsset,
+        seg: ScoredSegment,
         strategy: FramingStrategy,
         output_dir: Path,
-    ) -> "ExportedClip":
+        caption: str | None = None,
+    ) -> ExportedClip:
         """Export a single segment as a clip.
 
         Args:
@@ -248,6 +255,7 @@ class ClipExporter:
             seg: Scored segment to export.
             strategy: Framing strategy to apply.
             output_dir: Directory to write the output file.
+            caption: Optional text to burn as subtitles.
 
         Returns:
             ExportedClip with metadata.
@@ -263,6 +271,11 @@ class ClipExporter:
         output_path = output_dir / filename
 
         vf_filter = strategy.build_filter(media)
+        if caption:
+            subtitle_filter = burn_subtitles(caption)
+            if subtitle_filter:
+                vf_filter = f"{vf_filter},{subtitle_filter}"
+                log.info("export.subtitle_added", rank=seg.rank, caption_length=len(caption))
 
         cmd = [
             self.ffmpeg_bin,
@@ -296,19 +309,39 @@ class ClipExporter:
             height=strategy.height,
             framing=FramingStrategyEnum(strategy.name),
             scored_segment=seg,
-            exported_at=datetime.now(timezone.utc),
+            exported_at=datetime.now(UTC),
             metadata={},
             file_size_bytes=file_size,
         )
 
-    def _save_manifest(self, clips: list["ExportedClip"], output_dir: Path) -> None:
+    def _save_manifest(self, clips: list[ExportedClip], output_dir: Path) -> None:
         """Save a JSON manifest of all exported clips.
 
         Args:
             clips: List of exported clips.
             output_dir: Directory to write clips.json.
         """
-        manifest = [json.loads(clip.model_dump_json()) for clip in clips]
+        if not clips:
+            # If no clips, we still write a manifest with empty clips and no checksum
+            manifest = {"input_checksum": None, "clips": []}
+        else:
+            # Compute SHA256 checksum of the source media (first clip's source path)
+            source_path = clips[0].source_path
+            if not source_path.exists():
+                log.warning("export.manifest_source_missing", path=str(source_path))
+                checksum = None
+            else:
+                hash_sha256 = hashlib.sha256()
+                with open(source_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hash_sha256.update(chunk)
+                checksum = hash_sha256.hexdigest()
+
+            # Convert each clip to a dictionary using model_dump_json and then parse to dict
+            clip_dicts = [orjson.loads(clip.model_dump_json()) for clip in clips]
+            manifest = {"input_checksum": checksum, "clips": clip_dicts}
+
         dest = output_dir / "clips.json"
-        dest.write_text(json.dumps(manifest, indent=2, default=str))
+        # Write with orjson, pretty printed with indent 2
+        dest.write_bytes(orjson.dumps(manifest, option=orjson.OPT_INDENT_2))
         log.info("export.manifest_saved", path=str(dest), count=len(clips))

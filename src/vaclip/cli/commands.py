@@ -19,24 +19,33 @@ Agent Instructions:
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import structlog
 import typer
 from rich.console import Console
-from rich.table import Table
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from vaclip.config.settings import Settings, load_settings
 from vaclip.models.schemas import FramingStrategy, Profile
+from vaclip.pipeline.pipeline import PipelineResult, PipelineStage, VAClipPipeline
+
+if TYPE_CHECKING:
+    pass
 
 log = structlog.get_logger(__name__)
 console = Console()
 
+# Export command functions for use in main app
+__all__ = ["cmd_run", "cmd_plan", "cmd_info", "cmd_clean"]
+
 # ---------------------------------------------------------------------------
 # Typer application
 # ---------------------------------------------------------------------------
+
 
 app = typer.Typer(
     name="vaclip",
@@ -56,7 +65,7 @@ def _version_callback(value: bool) -> None:  # noqa: FBT001
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(  # noqa: UP007
+    version: bool | None = typer.Option(  # noqa: UP007
         None,
         "--version",
         "-V",
@@ -75,7 +84,7 @@ def main(
 
 @app.command("run")
 def cmd_run(
-    source: str = typer.Argument(..., help="URL or local path to media file."),
+    source: str = typer.Option(..., "--source", "-s", help="URL or local path to media file."),
     profile: Profile = typer.Option(
         Profile.PODCAST, "--profile", "-p", help="Processing profile."
     ),
@@ -83,11 +92,17 @@ def cmd_run(
         FramingStrategy.WIDE, "--framing", "-f", help="Output framing strategy."
     ),
     max_clips: int = typer.Option(10, "--max-clips", "-n", help="Maximum clips to export."),
-    config: Optional[Path] = typer.Option(  # noqa: UP007
+    config: Path | None = typer.Option(  # noqa: UP007
         None, "--config", "-c", help="Path to YAML config override."
     ),
     from_stage: str = typer.Option(
         "ingest", "--from-stage", help="Resume from pipeline stage."
+    ),
+    output_dir: Path | None = typer.Option(  # noqa: UP007
+        None, "--output-dir", "-o", help="Output directory for clips."
+    ),
+    dry_run: bool = typer.Option(  # noqa: UP007
+        False, "--dry-run", help="Plan but do not execute."
     ),
 ) -> None:
     """Run the full VAClip pipeline on a media source.
@@ -96,8 +111,8 @@ def cmd_run(
     highlight moments, and exports short clips to the output directory.
 
     Examples:
-        vaclip run https://youtube.com/watch?v=XYZ --profile podcast
-        vaclip run ./my_video.mp4 --framing vertical --max-clips 5
+        vaclip run --source https://youtube.com/watch?v=XYZ --profile podcast
+        vaclip run --source ./my_video.mp4 --framing vertical --max-clips 5
     """
     log.info(
         "cli.run",
@@ -108,19 +123,57 @@ def cmd_run(
     )
 
     settings: Settings = load_settings(config)
+    if output_dir is not None:
+        settings.paths.output_dir = output_dir
+    from_stage_enum = PipelineStage[from_stage.upper()]
 
-    # TODO: Instantiate VAClipPipeline and call .run()
-    # from vaclip.pipeline.pipeline import VAClipPipeline, PipelineStage
-    # pipeline = VAClipPipeline(settings=settings)
-    # result = pipeline.run(
-    #     source=source,
-    #     profile=profile.value,
-    #     framing=framing.value,
-    #     from_stage=PipelineStage[from_stage.upper()],
-    #     max_clips=max_clips,
-    # )
-    # console.print(f"[green]Done![/green] Exported {len(result.clips)} clips.")
-    raise NotImplementedError("Pipeline execution not yet wired up")
+    # Calculate number of stages to run for progress bar
+    stages_to_run = [s for s in PipelineStage if s.value >= from_stage_enum.value]
+    num_stages = len(stages_to_run)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        overall_task = progress.add_task("[cyan]Running pipeline...", total=num_stages)
+
+        def on_stage_start(stage: PipelineStage, result: PipelineResult) -> None:
+            progress.update(overall_task, description=f"[cyan]Running {stage.name.lower()}...")
+
+        def on_stage_complete(stage: PipelineStage, result: PipelineResult) -> None:
+            elapsed = result.elapsed_seconds.get(stage.name, 0)
+            progress.update(overall_task, advance=1)
+            console.print(f"[green]✓[/green] {stage.name} completed in {elapsed:.1f}s")
+
+        def on_stage_error(stage: PipelineStage, result: PipelineResult) -> None:
+            console.print(f"[red]✗[/red] {stage.name} failed")
+            # Don't advance on error since stage didn't complete successfully
+
+        pipeline = VAClipPipeline(
+            settings=settings,
+            on_stage_start=on_stage_start,
+            on_stage_complete=on_stage_complete,
+            on_stage_error=on_stage_error,
+        )
+        try:
+            result = pipeline.run(
+                source=source,
+                profile=profile.value,
+                framing=framing.value,
+                from_stage=from_stage_enum,
+                max_clips=max_clips,
+                dry_run=dry_run,
+            )
+            console.print(f"[green]Done![/green] Exported {len(result.clips)} clips.")
+        except Exception as exc:
+            log.exception("cli.run.failed", error=str(exc))
+            console.print(f"[red]Pipeline failed:[/red] {exc}")
+            raise typer.Exit(code=1)
 
 
 @app.command("plan")
@@ -129,7 +182,10 @@ def cmd_plan(
     profile: Profile = typer.Option(Profile.PODCAST, "--profile", "-p"),
     framing: FramingStrategy = typer.Option(FramingStrategy.WIDE, "--framing", "-f"),
     max_clips: int = typer.Option(10, "--max-clips", "-n"),
-    config: Optional[Path] = typer.Option(None, "--config", "-c"),  # noqa: UP007
+    config: Path | None = typer.Option(None, "--config", "-c"),  # noqa: UP007
+    from_stage: str = typer.Option(
+        "ingest", "--from-stage", help="Resume from pipeline stage."
+    ),
 ) -> None:
     """Dry-run: log pipeline plan without executing any stages.
 
@@ -139,9 +195,28 @@ def cmd_plan(
     log.info("cli.plan", source=source, profile=profile.value)
     settings: Settings = load_settings(config)
 
-    # TODO: call pipeline.run(dry_run=True)
-    console.print("[yellow]Plan mode not yet implemented.[/yellow]")
-    raise NotImplementedError
+    from_stage_enum = PipelineStage[from_stage.upper()]
+    pipeline = VAClipPipeline(settings=settings)
+    pipeline.run(
+        source=source,
+        profile=profile.value,
+        framing=framing.value,
+        from_stage=from_stage_enum,
+        max_clips=max_clips,
+        dry_run=True,
+    )
+
+    console.print(f"[bold]Plan for:[/bold] {source}")
+    console.print(f"  Profile: {profile.value}")
+    console.print(f"  Framing: {framing.value}")
+    console.print(f"  From stage: {from_stage_enum.name}")
+    console.print(f"  Max clips: {max_clips}")
+    console.print("\n[bold]Stages to run:[/bold]")
+    for stage in PipelineStage:
+        if stage.value >= from_stage_enum.value:
+            console.print(f"  [green]{stage.name}[/green]")
+        else:
+            console.print(f"  [dim]{stage.name} (skipped)[/dim]")
 
 
 @app.command("info")
@@ -154,9 +229,25 @@ def cmd_info(
     """
     log.info("cli.info", source=source)
 
-    # TODO: call YtDlpAdapter or LocalFileAdapter .probe()
-    console.print("[yellow]Info command not yet implemented.[/yellow]")
-    raise NotImplementedError
+    from vaclip.ingest.local_adapter import LocalFileAdapter
+
+    if source.startswith("http"):
+        console.print("[yellow]Info command for URLs requires full ingest flow.[/yellow]")
+        console.print(f"Use: vaclip run --dry-run --source {source}")
+    else:
+        adapter = LocalFileAdapter()
+        try:
+            # Get basic info from ffprobe
+            metadata = adapter._extract_metadata(Path(source))
+            console.print(f"[bold]Source:[/bold] {source}")
+            console.print(f"[bold]Duration:[/bold] {metadata['duration']:.1f}s")
+            console.print(f"[bold]Resolution:[/bold] {metadata['width']}x{metadata['height']}")
+            console.print(f"[bold]FPS:[/bold] {metadata['fps']}")
+            console.print(f"[bold]Codec:[/bold] {metadata['codec']}")
+            console.print(f"[bold]Format:[/bold] {metadata['format']}")
+        except Exception as exc:
+            console.print(f"[red]Error inspecting file:[/red] {exc}")
+            raise typer.Exit(code=1)
 
 
 @app.command("clean")
@@ -191,12 +282,11 @@ def cmd_clean(
     settings: Settings = load_settings()
     removed: list[str] = []
 
-    # TODO: iterate targets and delete directories
-    # for target in targets:
-    #     path = getattr(settings.paths, f"{target}_dir")
-    #     if path.exists():
-    #         shutil.rmtree(path)
-    #         removed.append(str(path))
+    for target in targets:
+        path = getattr(settings.paths, f"{target}_dir")
+        if path.exists():
+            shutil.rmtree(path)
+            removed.append(str(path))
 
     log.info("cli.clean", removed=removed)
     console.print(f"[green]Cleaned:[/green] {removed}")

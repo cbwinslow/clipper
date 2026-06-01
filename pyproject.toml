@@ -49,6 +49,15 @@ dependencies = [
   "tqdm>=4.66.0",
   "python-dotenv>=1.0.0",
 
+  # Audio analysis
+  "librosa>=0.10.0",
+
+  # Sentiment analysis
+  "vaderSentiment>=3.3.0",
+
+  # Video processing for motion detection
+  "opencv-python-headless>=4.9.0",  # Headless for server environments
+
   # Artifact persistence
   "orjson>=3.9.0",
 ]
@@ -84,6 +93,8 @@ packages = ["src/vaclip"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.mypy]

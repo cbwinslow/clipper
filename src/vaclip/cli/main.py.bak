@@ -16,14 +16,14 @@ import typer
 from rich.console import Console
 
 from vaclip.__version__ import __version__
-from vaclip.cli import (
+from vaclip.cli.commands import (
     export,
     ingest,
+    pipeline,
     score,
     segment,
     transcribe,
 )
-from vaclip.cli.commands import cmd_clean, cmd_info, cmd_plan, cmd_run
 from vaclip.logging.setup import configure_logging
 
 app = typer.Typer(
@@ -42,12 +42,7 @@ app.add_typer(transcribe.app, name="transcribe", help="Transcribe audio using fa
 app.add_typer(segment.app, name="segment", help="Detect shots and generate candidate clips.")
 app.add_typer(score.app, name="score", help="Score candidate clips by profile and intent.")
 app.add_typer(export.app, name="export", help="Export top-ranked clips via FFmpeg.")
-
-# Register pipeline commands directly (not as a group)
-app.command(name="run")(cmd_run)
-app.command(name="plan")(cmd_plan)
-app.command(name="info")(cmd_info)
-app.command(name="clean")(cmd_clean)
+app.add_typer(pipeline.app, name="run", help="Run full pipeline end-to-end.")
 
 
 @app.callback(invoke_without_command=True)
