@@ -3,27 +3,17 @@
 Provides multi-signal scoring to identify the most interesting segments
 of video content. Combines transcript, audio energy, and visual motion
 signals via a configurable composite scorer.
-
-Agent Instructions:
-    - Implement the TODO sections in each scorer's score() method
-    - Use librosa for audio analysis, cv2 for visual motion
-    - Each scorer must return a float in range [0.0, 1.0]
-    - CompositeScorer.score_all() aggregates and ranks all segments
-    - Profiles determine weighting - do not hardcode weights in scorers
-    - See docs/agents/scoring_agent.md for full implementation guide
 """
 from __future__ import annotations
 
 import pathlib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from vaclip.logging.setup import get_logger
-from vaclip.scoring.base import BaseScorer
-from vaclip.utils.exceptions import ScoringError
 
 if TYPE_CHECKING:
-    from vaclip.models.media import MediaAsset, ScoredSegment, Segment, Transcript
+    from vaclip.models.schemas import Segment, Transcript
 
 log = get_logger(__name__)
 
@@ -34,20 +24,7 @@ log = get_logger(__name__)
 
 @dataclass
 class ScoringProfile:
-    """Configures weights and thresholds for a specific content type.
-
-    Weights should sum to approximately 1.0. Profiles control how much
-    each signal type contributes to the final composite score.
-
-    Attributes:
-        name: Profile identifier (e.g., "podcast", "gaming").
-        transcript_weight: Weight for text-based scoring.
-        audio_weight: Weight for audio energy scoring.
-        visual_weight: Weight for visual motion scoring.
-        min_duration: Minimum segment duration in seconds.
-        max_duration: Maximum segment duration in seconds.
-        top_n: Number of top segments to select.
-    """
+    """Configures weights and thresholds for a specific content type."""
 
     name: str
     transcript_weight: float = 0.5
@@ -94,14 +71,7 @@ PROFILES: dict[str, ScoringProfile] = {
 
 
 def get_profile(name: str) -> ScoringProfile:
-    """Return a named ScoringProfile, falling back to 'generic' if not found.
-
-    Args:
-        name: Profile name.
-
-    Returns:
-        ScoringProfile instance.
-    """
+    """Return a named ScoringProfile, falling back to 'generic'."""
     profile = PROFILES.get(name)
     if profile is None:
         log.warning("scoring.unknown_profile", name=name, fallback="generic")
@@ -113,128 +83,180 @@ def get_profile(name: str) -> ScoringProfile:
 # Individual Scorers
 # ---------------------------------------------------------------------------
 
-class TranscriptScorer(BaseScorer):
-    """Score segments based on transcript content signals.
-
-    Analyzes keyword density, sentiment, pacing, and reaction words
-    to identify verbally engaging or emotionally resonant moments.
-
-    Keyword categories:
-        - Funny: laughter words, joke setups, punchlines
-        - Insightful: key/important/critical signal words
-        - Hype: excitement/amazement words
-        - Emotional: emotional trigger words
-    """
+class TranscriptScorer:
+    """Score segments based on transcript content signals."""
 
     FUNNY_WORDS: frozenset[str] = frozenset({
         "laugh", "funny", "hilarious", "joke", "lol", "haha", "prank",
-        "comedy", "ridiculous", "absurd", "silly", "goofy",
+        "comedy", "ridiculous", "absurd", "silly", "goofy", "humor",
     })
     INSIGHTFUL_WORDS: frozenset[str] = frozenset({
         "important", "key", "critical", "essentially", "basically",
         "the point is", "what matters", "the truth", "realize", "insight",
-        "secret", "lesson", "mistake", "wrong", "actually",
+        "secret", "lesson", "mistake", "wrong", "actually", "discovered",
+        "never", "always", "everyone", "nobody", "surprising", "unexpected",
     })
     HYPE_WORDS: frozenset[str] = frozenset({
         "incredible", "amazing", "unbelievable", "insane", "crazy",
         "wild", "epic", "legendary", "mind-blowing", "shocking", "wow",
-        "omg", "no way", "what",
+        "omg", "no way", "what", "seriously", "literally", "absolutely",
+    })
+    EMOTIONAL_WORDS: frozenset[str] = frozenset({
+        "love", "hate", "miss", "feel", "heart", "soul", "cry", "tears",
+        "scared", "terrified", "excited", "proud", "ashamed", "grateful",
     })
 
     def score(self, segment: "Segment", audio_path: pathlib.Path | None = None) -> float:
-        """Score a segment based on transcript text signals.
+        """Score segment by keyword density, pacing, and punctuation sentiment."""
+        text = (segment.text or "").lower()
+        words = text.split()
+        if not words:
+            return 0.0
 
-        Args:
-            segment: The segment to score.
-            audio_path: Unused by this scorer.
+        word_set = set(words)
+        all_kw = self.FUNNY_WORDS | self.INSIGHTFUL_WORDS | self.HYPE_WORDS | self.EMOTIONAL_WORDS
+        keyword_hits = len(word_set & all_kw)
+        # weighted: funny/hype slightly higher than emotional
+        weighted_hits = (
+            len(word_set & self.FUNNY_WORDS) * 1.2
+            + len(word_set & self.HYPE_WORDS) * 1.1
+            + len(word_set & self.INSIGHTFUL_WORDS) * 1.0
+            + len(word_set & self.EMOTIONAL_WORDS) * 0.9
+        )
+        density = min(weighted_hits / max(len(words), 1) * 5, 1.0)  # scale up small values
 
-        Returns:
-            Score in range [0.0, 1.0].
-        """
-        # TODO: implement transcript scoring
-        # 1. Normalize text to lowercase
-        # 2. Count keyword hits from FUNNY/INSIGHTFUL/HYPE sets
-        # 3. Calculate keyword density (hits / word_count)
-        # 4. Compute words-per-second pacing
-        # 5. Add sentiment score using vaderSentiment
-        # 6. Normalize weighted sum to [0.0, 1.0]
-        # 7. Return final score
-        raise NotImplementedError("TranscriptScorer.score() not yet implemented")
+        # pacing: ~3 words/sec = fully engaging
+        duration = max(segment.end - segment.start, 0.01)
+        pacing = min(len(words) / duration / 3.0, 1.0)
+
+        # punctuation as excitement proxy
+        punct = min(
+            (text.count("!") + text.count("?")) / max(len(words) / 8, 1),
+            1.0,
+        )
+
+        score = density * 0.5 + pacing * 0.3 + punct * 0.2
+        return float(min(max(score, 0.0), 1.0))
 
 
-class AudioEnergyScorer(BaseScorer):
-    """Score segments based on audio energy and dynamics.
+class AudioEnergyScorer:
+    """Score segments based on audio energy and dynamics."""
 
-    Uses librosa to analyze the audio track and identify segments with
-    high energy, volume spikes, or low silence ratios.
-    """
+    SILENCE_THRESHOLD_DB: float = -40.0
 
-    SILENCE_THRESHOLD_DB: float = -40.0  # dBFS below which is silence
-
-    def score(self, segment: "Segment", audio_path: pathlib.Path | None = None) -> float:
-        """Score a segment based on audio energy features.
-
-        Args:
-            segment: The segment to score (provides start/end times).
-            audio_path: Path to the full audio WAV file.
-
-        Returns:
-            Score in range [0.0, 1.0].
-        """
+    def score(
+        self,
+        segment: "Segment",
+        audio_path: pathlib.Path | None = None,
+    ) -> float:
+        """Score segment by RMS energy and silence ratio (requires librosa)."""
         if audio_path is None:
             log.warning("scoring.audio_path_missing", scorer="AudioEnergyScorer")
             return 0.0
 
-        # TODO: implement audio energy scoring
-        # import librosa
-        # import numpy as np
-        # 1. Load audio slice: librosa.load(audio_path, sr=16000,
-        #        offset=segment.start, duration=segment.end - segment.start)
-        # 2. Compute RMS energy: librosa.feature.rms(y=y)
-        # 3. Compute silence ratio (frames below SILENCE_THRESHOLD_DB)
-        # 4. Detect volume spikes (sudden large energy jumps)
-        # 5. Normalize to [0.0, 1.0]
-        raise NotImplementedError("AudioEnergyScorer.score() not yet implemented")
+        try:
+            import librosa
+            import numpy as np
+        except ImportError:
+            log.warning("scoring.librosa_missing", note="pip install librosa")
+            return 0.0
+
+        try:
+            duration = max(segment.end - segment.start, 0.1)
+            y, _sr = librosa.load(
+                str(audio_path),
+                sr=16000,
+                offset=segment.start,
+                duration=duration,
+                mono=True,
+            )
+            if len(y) == 0:
+                return 0.0
+
+            rms = librosa.feature.rms(y=y)[0]
+            rms_db = librosa.amplitude_to_db(rms, ref=float(np.max(rms)) if rms.max() > 0 else 1.0)
+            silence_ratio = float(np.mean(rms_db < self.SILENCE_THRESHOLD_DB))
+            mean_energy = float(np.mean(rms))
+
+            # 0.1 RMS amplitude = loud/engaged speaker
+            energy_score = float(np.clip(mean_energy / 0.1, 0.0, 1.0))
+            activity_score = 1.0 - silence_ratio
+
+            # detect energy spikes (sudden loud moments)
+            if len(rms) > 2:
+                spike_score = float(
+                    np.clip(np.std(rms) / (mean_energy + 1e-8) / 2.0, 0.0, 1.0)
+                )
+            else:
+                spike_score = 0.0
+
+            score = energy_score * 0.5 + activity_score * 0.3 + spike_score * 0.2
+            return float(np.clip(score, 0.0, 1.0))
+
+        except Exception as exc:
+            log.warning("scoring.audio_error", error=str(exc))
+            return 0.0
 
 
-class VisualMotionScorer(BaseScorer):
-    """Score segments based on visual activity in video frames.
+class VisualMotionScorer:
+    """Score segments based on visual activity and optical flow."""
 
-    Samples frames from the video and computes optical flow to quantify
-    motion, then detects scene cuts via histogram differences.
-    """
-
-    SAMPLE_FPS: float = 2.0  # frames per second to sample for efficiency
+    SAMPLE_FPS: float = 2.0
 
     def score(
         self,
         segment: "Segment",
         video_path: pathlib.Path | None = None,
     ) -> float:
-        """Score a segment based on visual motion and scene changes.
-
-        Args:
-            segment: The segment to score.
-            video_path: Path to the original video file.
-
-        Returns:
-            Score in range [0.0, 1.0].
-        """
+        """Score segment by optical flow magnitude (requires opencv-python)."""
         if video_path is None:
             log.warning("scoring.video_path_missing", scorer="VisualMotionScorer")
             return 0.0
 
-        # TODO: implement visual motion scoring
-        # import cv2
-        # import numpy as np
-        # 1. Open video: cap = cv2.VideoCapture(str(video_path))
-        # 2. Seek to segment.start
-        # 3. Sample SAMPLE_FPS frames per second
-        # 4. Compute optical flow: cv2.calcOpticalFlowFarneback(prev, curr, ...)
-        # 5. Compute mean flow magnitude
-        # 6. Detect scene cuts (histogram chi-squared difference)
-        # 7. Normalize to [0.0, 1.0]
-        raise NotImplementedError("VisualMotionScorer.score() not yet implemented")
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            log.warning("scoring.cv2_missing", note="pip install opencv-python")
+            return 0.0
+
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            step = max(1, int(fps / self.SAMPLE_FPS))
+            start_frame = int(segment.start * fps)
+            end_frame = int(segment.end * fps)
+
+            frames: list[Any] = []
+            for frame_idx in range(start_frame, end_frame, step):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+            cap.release()
+
+            if len(frames) < 2:
+                return 0.0
+
+            flow_magnitudes: list[float] = []
+            for prev_f, curr_f in zip(frames[:-1], frames[1:]):
+                flow = cv2.calcOpticalFlowFarneback(
+                    prev_f, curr_f, None,
+                    pyr_scale=0.5, levels=3, winsize=15,
+                    iterations=3, poly_n=5, poly_sigma=1.2, flags=0,
+                )
+                mag = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
+                flow_magnitudes.append(float(np.mean(mag)))
+
+            mean_motion = float(np.mean(flow_magnitudes))
+            # 10 pixels/frame avg = high-motion content
+            score = float(np.clip(mean_motion / 10.0, 0.0, 1.0))
+            return score
+
+        except Exception as exc:
+            log.warning("scoring.visual_error", error=str(exc))
+            return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -242,24 +264,9 @@ class VisualMotionScorer(BaseScorer):
 # ---------------------------------------------------------------------------
 
 class CompositeScorer:
-    """Combines all scorers with profile-defined weights to rank segments.
-
-    This is the main entry point for the scoring layer. It runs all
-    individual scorers and produces a ranked list of ScoredSegments.
-
-    Example::
-
-        scorer = CompositeScorer(profile=get_profile("podcast"))
-        ranked = scorer.score_all(segments, transcript, media)
-        top_clips = ranked[:5]
-    """
+    """Combines all scorers with profile-defined weights to rank segments."""
 
     def __init__(self, profile: ScoringProfile) -> None:
-        """Initialize with a scoring profile.
-
-        Args:
-            profile: Scoring profile controlling weights and thresholds.
-        """
         self.profile = profile
         self.transcript_scorer = TranscriptScorer()
         self.audio_scorer = AudioEnergyScorer()
@@ -268,20 +275,22 @@ class CompositeScorer:
     def score_all(
         self,
         segments: list["Segment"],
-        transcript: "Transcript",
-        media: "MediaAsset",
-    ) -> list["ScoredSegment"]:
-        """Score all segments and return them ranked by composite score.
+        transcript: Any,
+        media: Any,
+    ) -> list[Any]:
+        """Score all segments and return them ranked by composite score."""
+        from vaclip.models.schemas import ScoredSegment, SignalScore, HighlightType
 
-        Args:
-            segments: List of segments to score.
-            transcript: Full transcript (may be needed for context).
-            media: MediaAsset providing video and audio paths.
-
-        Returns:
-            Ranked list of ScoredSegment, highest score first.
-        """
-        from vaclip.models.media import ScoredSegment
+        audio_path = (
+            pathlib.Path(media.extra["audio_path"])
+            if hasattr(media, "extra") and media.extra.get("audio_path")
+            else None
+        )
+        video_path = (
+            pathlib.Path(str(media.local_path))
+            if hasattr(media, "local_path") and media.local_path
+            else None
+        )
 
         log.info(
             "scoring.start",
@@ -289,41 +298,59 @@ class CompositeScorer:
             segment_count=len(segments),
         )
 
-        # TODO: implement composite scoring
-        # scored: list[ScoredSegment] = []
-        # for segment in segments:
-        #     duration = segment.end - segment.start
-        #     if duration < self.profile.min_duration or duration > self.profile.max_duration:
-        #         continue
-        #
-        #     t_score = self.transcript_scorer.score(segment)
-        #     a_score = self.audio_scorer.score(segment, media.audio_path)
-        #     v_score = self.visual_scorer.score(segment, media.local_path)
-        #
-        #     composite = (
-        #         t_score * self.profile.transcript_weight +
-        #         a_score * self.profile.audio_weight +
-        #         v_score * self.profile.visual_weight
-        #     )
-        #
-        #     scored.append(ScoredSegment(
-        #         segment=segment,
-        #         transcript_score=t_score,
-        #         audio_score=a_score,
-        #         visual_score=v_score,
-        #         composite_score=composite,
-        #         rank=0,  # set after sorting
-        #         highlight_type=self._classify(segment, t_score, a_score, v_score),
-        #         profile=self.profile.name,
-        #     ))
-        #
-        # scored.sort(key=lambda s: s.composite_score, reverse=True)
-        # for rank, s in enumerate(scored, start=1):
-        #     s.rank = rank
-        #
-        # log.info("scoring.complete", scored=len(scored), top_score=scored[0].composite_score if scored else 0)
-        # return scored
-        raise NotImplementedError("CompositeScorer.score_all() not yet implemented")
+        scored: list[Any] = []
+        for segment in segments:
+            duration = segment.end - segment.start
+            if not (self.profile.min_duration <= duration <= self.profile.max_duration):
+                continue
+
+            t_score = self.transcript_scorer.score(segment)
+            a_score = self.audio_scorer.score(segment, audio_path=audio_path)
+            v_score = self.visual_scorer.score(segment, video_path=video_path)
+
+            composite = (
+                t_score * self.profile.transcript_weight
+                + a_score * self.profile.audio_weight
+                + v_score * self.profile.visual_weight
+            )
+
+            scored.append(ScoredSegment(
+                segment=segment,
+                score=composite,
+                signals=[
+                    SignalScore(
+                        name="transcript",
+                        raw=t_score,
+                        normalized=t_score,
+                        weight=self.profile.transcript_weight,
+                    ),
+                    SignalScore(
+                        name="audio",
+                        raw=a_score,
+                        normalized=a_score,
+                        weight=self.profile.audio_weight,
+                    ),
+                    SignalScore(
+                        name="visual",
+                        raw=v_score,
+                        normalized=v_score,
+                        weight=self.profile.visual_weight,
+                    ),
+                ],
+                highlight_type=self._classify(segment, t_score, a_score, v_score),
+            ))
+
+        scored.sort(key=lambda s: s.score, reverse=True)
+        for rank, s in enumerate(scored, start=1):
+            s.rank = rank
+
+        log.info(
+            "scoring.complete",
+            profile=self.profile.name,
+            scored=len(scored),
+            top_score=round(scored[0].score, 4) if scored else 0,
+        )
+        return scored[: self.profile.top_n]
 
     def _classify(
         self,
@@ -331,19 +358,33 @@ class CompositeScorer:
         transcript_score: float,
         audio_score: float,
         visual_score: float,
-    ) -> str:
-        """Classify the highlight type based on which signal dominated.
+    ) -> Any:
+        """Classify highlight type based on dominant signal."""
+        from vaclip.models.schemas import HighlightType
 
-        Args:
-            segment: The segment being classified.
-            transcript_score: Score from transcript analysis.
-            audio_score: Score from audio analysis.
-            visual_score: Score from visual motion analysis.
+        text = (segment.text or "").lower()
+        word_set = set(text.split())
 
-        Returns:
-            Highlight type label: "funny", "insightful", "hype", "action",
-            "emotional", or "generic".
-        """
-        # TODO: implement classification logic
-        # Use dominant score signal and keyword checks to assign type
-        return "generic"
+        # Keyword-based overrides first
+        if word_set & TranscriptScorer.FUNNY_WORDS:
+            return HighlightType.LAUGH
+        if word_set & {"applause", "clap", "crowd"}:
+            return HighlightType.APPLAUSE
+
+        # Signal dominance
+        scores = {
+            "transcript": transcript_score * self.profile.transcript_weight,
+            "audio": audio_score * self.profile.audio_weight,
+            "visual": visual_score * self.profile.visual_weight,
+        }
+        dominant = max(scores, key=lambda k: scores[k])
+
+        if dominant == "transcript":
+            if word_set & TranscriptScorer.INSIGHTFUL_WORDS:
+                return HighlightType.KEY_QUOTE
+            return HighlightType.GENERIC
+        if dominant == "audio":
+            return HighlightType.PEAK_ENERGY
+        if dominant == "visual":
+            return HighlightType.REACTION
+        return HighlightType.GENERIC
