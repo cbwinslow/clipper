@@ -1,227 +1,191 @@
-"""Whisper-based transcription backends for VAClip.
-
-Provides GPU-accelerated (CUDA) and CPU fallback transcription backends
-using the faster-whisper library. Produces word-level timestamped transcripts.
-
-Agent Instructions:
-    - Implement the TODO sections in WhisperBackend.transcribe()
-    - Use faster_whisper.WhisperModel for inference
-    - Build WordToken list from segment.words
-    - Construct and save Transcript to cache/transcripts/<asset_id>.json
-    - WhisperCPUBackend inherits from WhisperBackend, just overrides class vars
-    - get_transcription_backend() auto-selects based on torch.cuda.is_available()
-    - See docs/agents/transcription_agent.md for full implementation guide
-"""
+"""Faster-Whisper ASR backend for VAClip."""
 from __future__ import annotations
 
+import json
 import pathlib
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import Any
 
 from vaclip.logging.setup import get_logger
-from vaclip.transcription.base import BaseTranscriptionBackend
-from vaclip.utils.exceptions import TranscriptionError
-
-if TYPE_CHECKING:
-    from vaclip.config.settings import Settings
+from vaclip.utils.exceptions import VaClipTranscriptionError
 
 log = get_logger(__name__)
 
 
-class WhisperBackend(BaseTranscriptionBackend):
-    """GPU-accelerated transcription backend using faster-whisper + CUDA.
+class WhisperBackend:
+    """Transcription backend powered by faster-whisper."""
 
-    Targets RTX 3060 (12GB VRAM) with large-v3 model and float16 precision.
-    Downloads model weights on first use to the configured models directory.
-
-    Attributes:
-        MODEL_NAME: Default Whisper model size.
-        DEVICE: Compute device ("cuda" or "cpu").
-        COMPUTE_TYPE: Quantization type for efficiency.
-
-    Example::
-
-        backend = WhisperBackend()
-        transcript = backend.transcribe(Path("cache/audio/abc123.wav"), "abc123")
-        print(len(transcript.words))  # word-level tokens
-    """
-
-    MODEL_NAME: str = "large-v3"
-    DEVICE: str = "cuda"
-    COMPUTE_TYPE: str = "float16"   # optimal for RTX 3060
-    MODELS_DIR: str = "models"
-
-    def __init__(self, model_name: str | None = None) -> None:
-        """Load the Whisper model. Downloads to models/ on first use.
-
-        Args:
-            model_name: Override the default model size.
-                        Options: "tiny", "base", "small", "medium", "large-v3"
-        """
-        self._model_name = model_name or self.MODEL_NAME
-        self._model = None  # lazy-loaded on first transcribe call
-
-    def _load_model(self) -> None:
-        """Lazy-load the Whisper model to avoid startup delay.
-
-        Raises:
-            TranscriptionError: If the model fails to load.
-        """
-        if self._model is not None:
-            return
-        log.info(
-            "transcription.model_loading",
-            model=self._model_name,
-            device=self.DEVICE,
-            compute_type=self.COMPUTE_TYPE,
-        )
-        try:
-            # TODO: implement model loading
-            # from faster_whisper import WhisperModel
-            # self._model = WhisperModel(
-            #     self._model_name,
-            #     device=self.DEVICE,
-            #     compute_type=self.COMPUTE_TYPE,
-            #     download_root=self.MODELS_DIR,
-            # )
-            raise NotImplementedError("WhisperBackend._load_model() not yet implemented")
-        except Exception as exc:
-            log.error("transcription.model_load_failed", model=self._model_name, error=str(exc))
-            raise TranscriptionError(f"Failed to load Whisper model: {exc}") from exc
+    def __init__(
+        self,
+        model_name: str = "large-v3",
+        device: str = "auto",
+        compute_type: str = "float16",
+        models_dir: pathlib.Path | None = None,
+        transcripts_dir: pathlib.Path | None = None,
+        beam_size: int = 5,
+        vad_filter: bool = True,
+    ) -> None:
+        self._model_name = model_name
+        self._device = device if device != "auto" else self._detect_device()
+        self._compute_type = self._resolve_compute_type(compute_type, self._device)
+        self._models_dir = models_dir or pathlib.Path("models")
+        self._transcripts_dir = transcripts_dir or pathlib.Path("cache/transcripts")
+        self._beam_size = beam_size
+        self._vad_filter = vad_filter
+        self._model: Any = None
 
     def transcribe(
         self,
         audio_path: pathlib.Path,
         asset_id: str,
         language: str | None = None,
-    ) -> "Transcript":  # type: ignore[name-defined]  # noqa: F821
-        """Transcribe an audio file to a word-level timestamped Transcript.
-
-        Args:
-            audio_path: Path to 16kHz mono WAV file.
-            asset_id: Used to name the output JSON file.
-            language: Language code (e.g., "en"). None = auto-detect.
-
-        Returns:
-            Transcript with word-level tokens and metadata.
-
-        Raises:
-            TranscriptionError: If transcription fails.
-        """
-        from vaclip.models.media import Transcript, WordToken  # avoid circular
+        initial_prompt: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Transcribe audio. Caches result to disk keyed by asset_id."""
+        if not force:
+            cached = self._load_cached(asset_id)
+            if cached:
+                log.info("transcription.cache_hit", asset_id=asset_id)
+                return cached
 
         log.info(
             "transcription.start",
             asset_id=asset_id,
-            audio_path=str(audio_path),
-            backend=self.DEVICE,
             model=self._model_name,
+            device=self._device,
         )
-
         self._load_model()
 
         try:
-            # TODO: implement transcription
-            # segments, info = self._model.transcribe(
-            #     str(audio_path),
-            #     language=language,
-            #     word_timestamps=True,
-            #     vad_filter=True,
-            #     beam_size=5,
-            # )
-            #
-            # words: list[WordToken] = []
-            # raw_segments: list[dict] = []
-            # for segment in segments:
-            #     raw_segments.append(segment._asdict())
-            #     if segment.words:
-            #         for w in segment.words:
-            #             words.append(WordToken(
-            #                 word=w.word.strip(),
-            #                 start=w.start,
-            #                 end=w.end,
-            #                 confidence=w.probability,
-            #             ))
-            #
-            # transcript = Transcript(
-            #     asset_id=asset_id,
-            #     language=info.language,
-            #     words=words,
-            #     segments=raw_segments,
-            #     model_name=self._model_name,
-            #     backend=f"whisper_{self.DEVICE}",
-            #     duration_seconds=info.duration,
-            #     created_at=datetime.now(timezone.utc),
-            # )
-            # self._save_transcript(transcript)
-            #
-            # log.info("transcription.complete", asset_id=asset_id, word_count=len(words))
-            # return transcript
-            raise NotImplementedError("WhisperBackend.transcribe() not yet implemented")
+            segments_gen, info = self._model.transcribe(
+                str(audio_path),
+                language=language,
+                initial_prompt=initial_prompt,
+                word_timestamps=True,
+                vad_filter=self._vad_filter,
+                beam_size=self._beam_size,
+            )
 
-        except TranscriptionError:
+            segments: list[dict] = []
+            for i, seg in enumerate(segments_gen):
+                words = []
+                if seg.words:
+                    for w in seg.words:
+                        words.append({
+                            "text": w.word.strip(),
+                            "start": round(w.start, 3),
+                            "end": round(w.end, 3),
+                            "confidence": round(w.probability, 4),
+                        })
+                segments.append({
+                    "id": i,
+                    "text": seg.text.strip(),
+                    "start": round(seg.start, 3),
+                    "end": round(seg.end, 3),
+                    "words": words,
+                    "avg_logprob": round(seg.avg_logprob, 4),
+                    "no_speech_prob": round(seg.no_speech_prob, 4),
+                })
+
+            transcript = {
+                "asset_id": asset_id,
+                "language": info.language,
+                "model_name": self._model_name,
+                "duration_sec": round(info.duration, 3),
+                "segments": segments,
+                "transcribed_at": datetime.now(timezone.utc).isoformat(),
+                "word_count": sum(len(s["words"]) for s in segments),
+            }
+            self._save_transcript(asset_id, transcript)
+            log.info(
+                "transcription.complete",
+                asset_id=asset_id,
+                segments=len(segments),
+                words=transcript["word_count"],
+                duration=transcript["duration_sec"],
+            )
+            return transcript
+
+        except VaClipTranscriptionError:
             raise
         except Exception as exc:
             log.error("transcription.failed", asset_id=asset_id, error=str(exc))
-            raise TranscriptionError(f"Transcription failed: {exc}") from exc
+            raise VaClipTranscriptionError(f"Transcription failed: {exc}") from exc
 
-    def _save_transcript(self, transcript: "Transcript") -> None:  # type: ignore[name-defined]
-        """Serialize transcript to JSON in the cache directory.
+    def unload(self) -> None:
+        """Release the model from memory."""
+        self._model = None
 
-        Args:
-            transcript: The Transcript to serialize.
-        """
-        from vaclip.config.settings import get_settings
-        settings = get_settings()
-        dest = settings.paths.transcripts_dir / f"{transcript.asset_id}.json"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(transcript.model_dump_json(indent=2))
-        log.info("transcription.saved", path=str(dest))
+    def _load_model(self) -> None:
+        if self._model is not None:
+            return
+        log.info(
+            "transcription.model_loading",
+            model=self._model_name,
+            device=self._device,
+            compute_type=self._compute_type,
+        )
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            raise VaClipTranscriptionError(
+                "faster-whisper is not installed. Run: pip install faster-whisper"
+            ) from exc
+        self._models_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._model = WhisperModel(
+                self._model_name,
+                device=self._device,
+                compute_type=self._compute_type,
+                download_root=str(self._models_dir),
+            )
+            log.info("transcription.model_loaded", model=self._model_name)
+        except Exception as exc:
+            raise VaClipTranscriptionError(
+                f"Failed to load Whisper model '{self._model_name}': {exc}"
+            ) from exc
+
+    def _save_transcript(self, asset_id: str, data: dict) -> None:
+        self._transcripts_dir.mkdir(parents=True, exist_ok=True)
+        out = self._transcripts_dir / f"{asset_id}.json"
+        out.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        log.debug("transcription.saved", path=str(out))
+
+    def _load_cached(self, asset_id: str) -> dict | None:
+        path = self._transcripts_dir / f"{asset_id}.json"
+        if path.exists():
+            try:
+                return json.loads(path.read_text())
+            except Exception:
+                pass
+        return None
+
+    @staticmethod
+    def _detect_device() -> str:
+        try:
+            import torch
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            return "cpu"
+
+    @staticmethod
+    def _resolve_compute_type(compute_type: str, device: str) -> str:
+        if device == "cpu" and compute_type == "float16":
+            return "int8"
+        return compute_type
 
 
-class WhisperCPUBackend(WhisperBackend):
-    """CPU fallback transcription backend for systems without a CUDA GPU.
-
-    Uses a smaller model and int8 quantization for reasonable CPU performance.
-    Automatically selected by get_transcription_backend() when CUDA is unavailable.
-    """
-
-    MODEL_NAME: str = "base"     # smaller model for CPU speed
-    DEVICE: str = "cpu"
-    COMPUTE_TYPE: str = "int8"   # best CPU performance
-
-
-def get_transcription_backend(
-    settings: "Settings | None" = None,
-) -> WhisperBackend:
-    """Return the best available transcription backend for the current hardware.
-
-    Auto-detects CUDA availability and returns WhisperBackend (GPU) or
-    WhisperCPUBackend (CPU) accordingly.
-
-    Args:
-        settings: Optional settings object. Loads from config if None.
-
-    Returns:
-        An initialized transcription backend ready for use.
-    """
-    if settings is None:
-        from vaclip.config.settings import get_settings
-        settings = get_settings()
-
-    try:
-        import torch
-        cuda_available = torch.cuda.is_available()
-    except ImportError:
-        cuda_available = False
-
-    if cuda_available:
-        log.info("transcription.backend_selected", backend="cuda", model=settings.transcription.model_name)
-        return WhisperBackend(model_name=settings.transcription.model_name)
-
-    log.warning(
-        "transcription.cuda_unavailable",
-        fallback="cpu",
-        note="Install PyTorch with CUDA support for better performance",
+def get_transcription_backend(settings: Any) -> WhisperBackend:
+    """Construct a WhisperBackend from Settings."""
+    t = settings.transcription
+    p = settings.paths
+    return WhisperBackend(
+        model_name=t.model_name,
+        device=t.device,
+        compute_type=t.compute_type,
+        models_dir=p.models_dir,
+        transcripts_dir=p.transcripts_dir,
+        beam_size=t.beam_size,
+        vad_filter=t.vad_filter,
     )
-    return WhisperCPUBackend()
