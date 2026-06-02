@@ -1,17 +1,4 @@
-"""yt-dlp ingest adapter for VAClip.
-
-Downloads video/audio from YouTube, Rumble, Kick, Twitch, and 1000+
-other sites supported by yt-dlp. Extracts audio and produces a MediaAsset.
-
-Agent Instructions:
-    - Implement the TODO sections below
-    - Use yt_dlp.YoutubeDL context manager for downloads
-    - Parse the .info.json file yt-dlp writes for metadata
-    - Call _extract_audio() after successful download
-    - Construct MediaAsset from metadata + paths
-    - Save MediaAsset JSON to cache/<asset_id>/media_asset.json
-    - See docs/agents/ingest_agent.md for full implementation guide
-"""
+"""yt-dlp ingest adapter for VAClip."""
 from __future__ import annotations
 
 import json
@@ -22,8 +9,7 @@ from typing import Any
 
 from vaclip.ingest.base import BaseIngestAdapter
 from vaclip.logging.setup import get_logger
-from vaclip.models.media import MediaAsset
-from vaclip.utils.exceptions import IngestError
+from vaclip.utils.exceptions import VaClipIngestError
 
 log = get_logger(__name__)
 
@@ -34,138 +20,121 @@ class YtDlpAdapter(BaseIngestAdapter):
     Supports YouTube, Rumble, Kick, Twitch, Vimeo, SoundCloud,
     and 1000+ other sites via yt-dlp's extractor ecosystem.
 
-    Attributes:
-        output_dir: Directory where downloaded files are stored.
-        audio_sample_rate: Sample rate for extracted audio WAV.
-        audio_channels: Number of audio channels (1=mono, 2=stereo).
-
     Example::
 
         adapter = YtDlpAdapter()
-        asset = adapter.ingest("https://youtube.com/watch?v=dQw4w9WgXcQ", profile="generic")
-        print(asset.local_path)
+        asset = adapter.ingest("https://youtube.com/watch?v=dQw4w9WgXcQ")
+        print(asset.extra["audio_path"])
     """
 
-    DEFAULT_FORMAT: str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-    AUDIO_SAMPLE_RATE: int = 16000  # Whisper requires 16kHz
-    AUDIO_CHANNELS: int = 1         # mono
+    DEFAULT_FORMAT: str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+    AUDIO_SAMPLE_RATE: int = 16000
+    AUDIO_CHANNELS: int = 1
 
     def __init__(
         self,
         output_dir: Path = Path("input"),
         cache_dir: Path = Path("cache"),
+        cookies_file: Path | None = None,
+        rate_limit: str | None = None,
     ) -> None:
-        """Initialize the yt-dlp adapter.
-
-        Args:
-            output_dir: Where to store downloaded video files.
-            cache_dir: Where to store intermediate artifacts (audio, metadata).
-        """
         self.output_dir = output_dir
         self.cache_dir = cache_dir
+        self.cookies_file = cookies_file
+        self.rate_limit = rate_limit
         output_dir.mkdir(parents=True, exist_ok=True)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def ingest(self, source: str, profile: str = "generic") -> MediaAsset:
-        """Download media from a URL and return a normalized MediaAsset.
-
-        Args:
-            source: URL of the video/audio to download.
-            profile: Content profile hint ("podcast", "gaming", etc.).
-
-        Returns:
-            MediaAsset with all metadata and paths populated.
-
-        Raises:
-            IngestError: If the download fails for any reason.
-        """
-        log.info("ingest.start", source=source, adapter="YtDlpAdapter", profile=profile)
-
+    def ingest(self, source: str, profile: str = "generic") -> Any:
+        """Download media from a URL and return a normalized MediaAsset."""
+        log.info("ingest.start", source=source, adapter="YtDlpAdapter")
         asset_id = str(uuid.uuid4())
         asset_dir = self.output_dir / asset_id
         asset_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            video_path, info = self._download(source, asset_dir, asset_id)
+            info = self._download(source, asset_dir)
+            video_path = self._find_video_file(asset_dir)
             audio_path = self._extract_audio(video_path, asset_id)
             asset = self._build_asset(asset_id, source, video_path, audio_path, info, profile)
-            self._save_asset(asset)
-
+            self._save_asset(asset, asset_id)
             log.info(
                 "ingest.complete",
                 asset_id=asset_id,
-                duration=asset.duration_seconds,
-                title=asset.title,
+                title=info.get("title"),
+                duration=info.get("duration"),
             )
             return asset
-
-        except IngestError:
+        except VaClipIngestError:
             raise
         except Exception as exc:
-            log.error("ingest.failed", source=source, asset_id=asset_id, error=str(exc))
-            raise IngestError(f"Download failed for {source}: {exc}") from exc
+            log.error("ingest.failed", source=source, error=str(exc))
+            raise VaClipIngestError(f"yt-dlp ingest failed for {source}: {exc}") from exc
 
-    def _download(self, url: str, output_dir: Path, asset_id: str) -> tuple[Path, dict[str, Any]]:
-        """Run yt-dlp to download the video and write an info JSON file.
+    def _download(self, url: str, asset_dir: Path) -> dict[str, Any]:
+        """Download media using yt-dlp and return extracted info dict."""
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise VaClipIngestError(
+                "yt-dlp is not installed. Run: pip install yt-dlp"
+            ) from exc
 
-        Args:
-            url: The source URL.
-            output_dir: Directory to write output files.
-            asset_id: Unique ID used in output filenames.
+        outtmpl = str(asset_dir / "%(title)s.%(ext)s")
+        ydl_opts: dict[str, Any] = {
+            "format": self.DEFAULT_FORMAT,
+            "outtmpl": outtmpl,
+            "writeinfojson": True,
+            "quiet": True,
+            "no_warnings": True,
+            "merge_output_format": "mp4",
+        }
+        if self.cookies_file and self.cookies_file.exists():
+            ydl_opts["cookiefile"] = str(self.cookies_file)
+        if self.rate_limit:
+            ydl_opts["ratelimit"] = self.rate_limit
 
-        Returns:
-            Tuple of (video_path, info_dict).
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-        Raises:
-            IngestError: If yt-dlp reports a download error.
-        """
-        # TODO: implement yt-dlp download
-        # import yt_dlp
-        # ydl_opts = {
-        #     "format": self.DEFAULT_FORMAT,
-        #     "outtmpl": str(output_dir / f"{asset_id}.%(ext)s"),
-        #     "writeinfojson": True,
-        #     "quiet": True,
-        #     "no_warnings": False,
-        # }
-        # with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        #     info = ydl.extract_info(url, download=True)
-        #     video_path = Path(ydl.prepare_filename(info))
-        # return video_path, info
-        raise NotImplementedError("YtDlpAdapter._download() not yet implemented")
+        return info or {}
+
+    def _find_video_file(self, asset_dir: Path) -> Path:
+        """Find the downloaded video file in the asset directory."""
+        for ext in (".mp4", ".mkv", ".webm", ".mov"):
+            matches = list(asset_dir.glob(f"*{ext}"))
+            if matches:
+                # Return the largest file (avoid tiny thumbnails)
+                return max(matches, key=lambda p: p.stat().st_size)
+        raise VaClipIngestError(
+            f"No video file found in {asset_dir} after yt-dlp download."
+        )
 
     def _extract_audio(self, video_path: Path, asset_id: str) -> Path:
-        """Extract audio track from video as 16kHz mono WAV using FFmpeg.
+        """Extract 16kHz mono WAV from the downloaded video."""
+        audio_dir = self.cache_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = audio_dir / f"{asset_id}.wav"
+        if audio_path.exists():
+            return audio_path
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", str(self.AUDIO_SAMPLE_RATE),
+            "-ac", str(self.AUDIO_CHANNELS),
+            str(audio_path),
+        ]
+        log.info("ingest.audio_extract", asset_id=asset_id, output=str(audio_path))
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise VaClipIngestError(
+                f"FFmpeg audio extraction failed: {result.stderr[-500:]}"
+            )
+        return audio_path
 
-        Args:
-            video_path: Path to the downloaded video file.
-            asset_id: Used to name the output WAV file.
-
-        Returns:
-            Path to the extracted WAV file.
-
-        Raises:
-            IngestError: If FFmpeg fails to extract audio.
-        """
-        audio_path = self.cache_dir / "audio" / f"{asset_id}.wav"
-        audio_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # TODO: implement FFmpeg audio extraction
-        # cmd = [
-        #     "ffmpeg", "-y",
-        #     "-i", str(video_path),
-        #     "-vn",                        # no video
-        #     "-acodec", "pcm_s16le",       # 16-bit PCM
-        #     "-ar", str(self.AUDIO_SAMPLE_RATE),
-        #     "-ac", str(self.AUDIO_CHANNELS),
-        #     str(audio_path),
-        # ]
-        # result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        # if result.returncode != 0:
-        #     raise IngestError(f"FFmpeg audio extraction failed: {result.stderr}")
-        raise NotImplementedError("YtDlpAdapter._extract_audio() not yet implemented")
-
-    def _build_asset(
+    def _build_asset(  # type: ignore[return]
         self,
         asset_id: str,
         source_url: str,
@@ -173,32 +142,34 @@ class YtDlpAdapter(BaseIngestAdapter):
         audio_path: Path,
         info: dict[str, Any],
         profile: str,
-    ) -> MediaAsset:
-        """Construct a MediaAsset from yt-dlp info dict and file paths.
+    ) -> Any:
+        from vaclip.models.schemas import MediaMeta, MediaType
+        return MediaMeta(
+            source_url=source_url,
+            local_path=video_path,
+            duration_sec=float(info.get("duration") or 0),
+            media_type=MediaType.VIDEO,
+            title=info.get("title") or video_path.stem,
+            width=info.get("width"),
+            height=info.get("height"),
+            fps=float(info.get("fps") or 0) or None,
+            extra={
+                "asset_id": asset_id,
+                "audio_path": str(audio_path),
+                "uploader": info.get("uploader"),
+                "upload_date": info.get("upload_date"),
+                "view_count": info.get("view_count"),
+                "like_count": info.get("like_count"),
+                "description": (info.get("description") or "")[:500],
+                "tags": info.get("tags") or [],
+                "extractor": info.get("extractor"),
+                "webpage_url": info.get("webpage_url") or source_url,
+                "profile": profile,
+            },
+        )
 
-        Args:
-            asset_id: Unique identifier.
-            source_url: Original download URL.
-            video_path: Path to downloaded video.
-            audio_path: Path to extracted WAV.
-            info: yt-dlp info dict (from writeinfojson or extract_info).
-            profile: Content profile.
-
-        Returns:
-            Populated MediaAsset instance.
-        """
-        # TODO: extract metadata from info dict and construct MediaAsset
-        # Fields to populate: title, duration_seconds, width, height, fps, codec, format
-        raise NotImplementedError("YtDlpAdapter._build_asset() not yet implemented")
-
-    def _save_asset(self, asset: MediaAsset) -> None:
-        """Serialize the MediaAsset to JSON in the cache directory.
-
-        Args:
-            asset: The MediaAsset to serialize.
-        """
-        asset_cache = self.cache_dir / str(asset.id)
-        asset_cache.mkdir(parents=True, exist_ok=True)
-        dest = asset_cache / "media_asset.json"
+    def _save_asset(self, asset: Any, asset_id: str) -> None:
+        dest = self.cache_dir / asset_id / "media_asset.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(asset.model_dump_json(indent=2))
-        log.info("ingest.asset_saved", path=str(dest))
+        log.debug("ingest.asset_saved", path=str(dest))
