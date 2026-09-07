@@ -11,7 +11,7 @@ repos:
   # General file hygiene
   # -----------------------------------------------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -32,7 +32,7 @@ repos:
   # Python: ruff linter + formatter
   # -----------------------------------------------------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.16.6
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -42,7 +42,7 @@ repos:
   # Python: mypy type checker
   # -----------------------------------------------------------------------
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+    rev: v2.3.1
     hooks:
       - id: mypy
         args: ["--ignore-missing-imports", "--no-error-summary"]
@@ -69,7 +69,7 @@ repos:
   # Conventional commits message validation
   # -----------------------------------------------------------------------
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.2.0
+    rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -90,7 +90,7 @@ repos:
   # YAML formatting
   # -----------------------------------------------------------------------
   - repo: https://github.com/google/yamlfmt
-    rev: v0.12.1
+    rev: v0.21.0
     hooks:
       - id: yamlfmt
         args: ["-formatter", "retain_line_breaks=true"]
