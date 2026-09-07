@@ -10,9 +10,9 @@ Agent Instructions:
     - Never hardcode paths - always use settings.paths.*
     - Load via Settings.from_yaml(path) or Settings.from_env()
 """
+
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,12 +44,12 @@ class TranscriptionSettings:
     """Settings for the Whisper transcription backend."""
 
     model_name: str = "large-v3"
-    device: str = "cuda"          # "cuda" or "cpu" - auto-detected if not set
+    device: str = "cuda"  # "cuda" or "cpu" - auto-detected if not set
     compute_type: str = "float16"  # "float16" for CUDA, "int8" for CPU
-    language: str | None = None    # None = auto-detect
+    language: str | None = None  # None = auto-detect
     word_timestamps: bool = True
-    vad_filter: bool = True        # voice activity detection to skip silence
-    beam_size: int = 5             # higher = more accurate, slower
+    vad_filter: bool = True  # voice activity detection to skip silence
+    beam_size: int = 5  # higher = more accurate, slower
     best_of: int = 5
 
 
@@ -59,7 +59,7 @@ class ScoringSettings:
 
     default_profile: str = "podcast"
     top_n: int = 10
-    min_segment_duration: float = 5.0   # seconds
+    min_segment_duration: float = 5.0  # seconds
     max_segment_duration: float = 60.0  # seconds
 
     # Default weights (overridden by profile)
@@ -70,18 +70,18 @@ class ScoringSettings:
     # LLM reranking (disabled by default)
     use_llm_reranker: bool = False
     llm_model: str = "openai/gpt-4o-mini"  # via OpenRouter
-    llm_top_n_candidates: int = 20         # send top N to LLM for reranking
+    llm_top_n_candidates: int = 20  # send top N to LLM for reranking
 
 
 @dataclass
 class ExportSettings:
     """Settings for clip rendering and export."""
 
-    default_framing: str = "wide"         # "wide", "vertical", "square"
-    max_clip_duration: float = 60.0       # seconds - enforced for Shorts
+    default_framing: str = "wide"  # "wide", "vertical", "square"
+    max_clip_duration: float = 60.0  # seconds - enforced for Shorts
     video_codec: str = "libx264"
-    video_preset: str = "slow"            # quality-first
-    video_crf: int = 18                   # 0=lossless, 51=worst; 18=high quality
+    video_preset: str = "slow"  # quality-first
+    video_crf: int = 18  # 0=lossless, 51=worst; 18=high quality
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
     container: str = "mp4"
@@ -97,19 +97,19 @@ class ExportSettings:
 class ArtifactSettings:
     """Controls for intermediate artifact preservation."""
 
-    keep_audio_wav: bool = True       # keep extracted audio after transcription
-    keep_transcripts: bool = True     # keep transcript JSON files
-    keep_scores: bool = True          # keep scoring JSON files
-    keep_source_video: bool = True    # never delete downloaded video
-    overwrite: bool = False           # overwrite existing artifacts
+    keep_audio_wav: bool = True  # keep extracted audio after transcription
+    keep_transcripts: bool = True  # keep transcript JSON files
+    keep_scores: bool = True  # keep scoring JSON files
+    keep_source_video: bool = True  # never delete downloaded video
+    overwrite: bool = False  # overwrite existing artifacts
 
 
 @dataclass
 class LoggingSettings:
     """Logging configuration."""
 
-    level: str = "INFO"               # DEBUG, INFO, WARNING, ERROR
-    format: str = "console"           # "console" or "json"
+    level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+    format: str = "console"  # "console" or "json"
     log_file: Path | None = Path("logs/vaclip.log")
     rotation: str = "10 MB"
     retention: str = "7 days"
@@ -127,7 +127,7 @@ class Settings:
     logging: LoggingSettings = field(default_factory=LoggingSettings)
 
     @classmethod
-    def from_yaml(cls, path: Path = Path("configs/app.yaml")) -> "Settings":
+    def from_yaml(cls, path: Path = Path("configs/app.yaml")) -> Settings:
         """Load settings from a YAML file, merging with defaults."""
         # TODO: implement YAML loading and merge with dataclass defaults
         # Use dacite or manual dict-to-dataclass conversion
@@ -138,7 +138,7 @@ class Settings:
         return cls._from_dict(data)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """Override settings from environment variables.
 
         Environment variable format: VACLIP__SECTION__KEY
@@ -149,7 +149,7 @@ class Settings:
         return settings
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> "Settings":
+    def _from_dict(cls, data: dict[str, Any]) -> Settings:
         """Construct Settings from a nested dictionary (e.g., from YAML)."""
         # TODO: implement recursive dataclass construction from dict
         # Consider using dacite library for nested dataclass hydration

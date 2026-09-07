@@ -1,7 +1,7 @@
 # OpenCode Master Prompt for VAClip Development
 
-**Project:** VAClip (Video Auto Clipper)  
-**Repository:** https://github.com/cbwinslow/clipper  
+**Project:** VAClip (Video Auto Clipper)
+**Repository:** https://github.com/cbwinslow/clipper
 **Generated:** 2026-05-23 02:10:49
 
 ---
@@ -233,24 +233,16 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+
 def my_function(input_path: Path, settings: Settings) -> Result:
-    logger.info(
-        "function_started",
-        input_path=str(input_path),
-        use_gpu=settings.use_gpu
-    )
+    logger.info("function_started", input_path=str(input_path), use_gpu=settings.use_gpu)
 
     try:
         result = do_work()
         logger.info("function_completed", duration=elapsed)
         return result
     except SomeError as e:
-        logger.error(
-            "function_failed",
-            input_path=str(input_path),
-            error=str(e),
-            exc_info=True
-        )
+        logger.error("function_failed", input_path=str(input_path), error=str(e), exc_info=True)
         raise
 ```
 
@@ -259,6 +251,7 @@ def my_function(input_path: Path, settings: Settings) -> Result:
 from abc import ABC, abstractmethod
 from pathlib import Path
 import structlog
+
 
 class BaseAdapter(ABC):
     def __init__(self, settings: Settings):
@@ -285,31 +278,25 @@ import subprocess
 from pathlib import Path
 from vaclip.utils.exceptions import ExportError
 
+
 def run_ffmpeg(input_path: Path, output_path: Path) -> None:
     cmd = [
         "ffmpeg",
         "-y",  # Overwrite output
-        "-i", str(input_path),
-        "-vcodec", "h264_nvenc",
-        "-acodec", "aac",
-        str(output_path)
+        "-i",
+        str(input_path),
+        "-vcodec",
+        "h264_nvenc",
+        "-acodec",
+        "aac",
+        str(output_path),
     ]
 
     try:
-        result = subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         logger.info("ffmpeg_success", output_path=str(output_path))
     except subprocess.CalledProcessError as e:
-        logger.error(
-            "ffmpeg_failed",
-            stderr=e.stderr,
-            returncode=e.returncode,
-            exc_info=True
-        )
+        logger.error("ffmpeg_failed", stderr=e.stderr, returncode=e.returncode, exc_info=True)
         raise ExportError(f"FFmpeg failed: {e.stderr}") from e
 ```
 
@@ -505,4 +492,3 @@ You now have everything you need to build exceptional code for VAClip.
 - Ask when uncertain
 
 **Let's build something amazing! 🚀**
-

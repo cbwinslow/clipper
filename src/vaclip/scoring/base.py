@@ -28,9 +28,9 @@ class CandidateClip:
 
     run_id: str
     candidate_id: str
-    start: float          # seconds
-    end: float            # seconds
-    text: str             # transcript text for this window
+    start: float  # seconds
+    end: float  # seconds
+    text: str  # transcript text for this window
     segment_ids: list[int] = field(default_factory=list)
     features: dict[str, Any] = field(default_factory=dict)
 
@@ -54,12 +54,12 @@ class ScoredClip:
     """
 
     candidate: CandidateClip
-    score: float                            # 0.0 - 1.0 composite score
+    score: float  # 0.0 - 1.0 composite score
     scorer_name: str
     profile: ContentProfile
     intent: ClipIntent
     score_breakdown: dict[str, float] = field(default_factory=dict)
-    reasoning: str = ""                     # human-readable explanation
+    reasoning: str = ""  # human-readable explanation
 
     @property
     def start(self) -> float:
@@ -131,7 +131,4 @@ class ClipScorer(ABC):
         Used for polymorphic scorer selection.
         Subclasses can override for more precise matching.
         """
-        return (
-            profile in self.supported_profiles
-            and intent in self.supported_intents
-        )
+        return profile in self.supported_profiles and intent in self.supported_intents

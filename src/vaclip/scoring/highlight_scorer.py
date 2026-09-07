@@ -12,15 +12,15 @@ Agent Instructions:
     - Profiles determine weighting - do not hardcode weights in scorers
     - See docs/agents/scoring_agent.md for full implementation guide
 """
+
 from __future__ import annotations
 
 import pathlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
 from vaclip.scoring.base import BaseScorer
-from vaclip.utils.exceptions import ScoringError
 
 if TYPE_CHECKING:
     from vaclip.models.media import MediaAsset, ScoredSegment, Segment, Transcript
@@ -31,6 +31,7 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Scoring Profiles
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ScoringProfile:
@@ -113,6 +114,7 @@ def get_profile(name: str) -> ScoringProfile:
 # Individual Scorers
 # ---------------------------------------------------------------------------
 
+
 class TranscriptScorer(BaseScorer):
     """Score segments based on transcript content signals.
 
@@ -126,22 +128,61 @@ class TranscriptScorer(BaseScorer):
         - Emotional: emotional trigger words
     """
 
-    FUNNY_WORDS: frozenset[str] = frozenset({
-        "laugh", "funny", "hilarious", "joke", "lol", "haha", "prank",
-        "comedy", "ridiculous", "absurd", "silly", "goofy",
-    })
-    INSIGHTFUL_WORDS: frozenset[str] = frozenset({
-        "important", "key", "critical", "essentially", "basically",
-        "the point is", "what matters", "the truth", "realize", "insight",
-        "secret", "lesson", "mistake", "wrong", "actually",
-    })
-    HYPE_WORDS: frozenset[str] = frozenset({
-        "incredible", "amazing", "unbelievable", "insane", "crazy",
-        "wild", "epic", "legendary", "mind-blowing", "shocking", "wow",
-        "omg", "no way", "what",
-    })
+    FUNNY_WORDS: frozenset[str] = frozenset(
+        {
+            "laugh",
+            "funny",
+            "hilarious",
+            "joke",
+            "lol",
+            "haha",
+            "prank",
+            "comedy",
+            "ridiculous",
+            "absurd",
+            "silly",
+            "goofy",
+        }
+    )
+    INSIGHTFUL_WORDS: frozenset[str] = frozenset(
+        {
+            "important",
+            "key",
+            "critical",
+            "essentially",
+            "basically",
+            "the point is",
+            "what matters",
+            "the truth",
+            "realize",
+            "insight",
+            "secret",
+            "lesson",
+            "mistake",
+            "wrong",
+            "actually",
+        }
+    )
+    HYPE_WORDS: frozenset[str] = frozenset(
+        {
+            "incredible",
+            "amazing",
+            "unbelievable",
+            "insane",
+            "crazy",
+            "wild",
+            "epic",
+            "legendary",
+            "mind-blowing",
+            "shocking",
+            "wow",
+            "omg",
+            "no way",
+            "what",
+        }
+    )
 
-    def score(self, segment: "Segment", audio_path: pathlib.Path | None = None) -> float:
+    def score(self, segment: Segment, audio_path: pathlib.Path | None = None) -> float:
         """Score a segment based on transcript text signals.
 
         Args:
@@ -171,7 +212,7 @@ class AudioEnergyScorer(BaseScorer):
 
     SILENCE_THRESHOLD_DB: float = -40.0  # dBFS below which is silence
 
-    def score(self, segment: "Segment", audio_path: pathlib.Path | None = None) -> float:
+    def score(self, segment: Segment, audio_path: pathlib.Path | None = None) -> float:
         """Score a segment based on audio energy features.
 
         Args:
@@ -208,7 +249,7 @@ class VisualMotionScorer(BaseScorer):
 
     def score(
         self,
-        segment: "Segment",
+        segment: Segment,
         video_path: pathlib.Path | None = None,
     ) -> float:
         """Score a segment based on visual motion and scene changes.
@@ -241,6 +282,7 @@ class VisualMotionScorer(BaseScorer):
 # Composite Scorer
 # ---------------------------------------------------------------------------
 
+
 class CompositeScorer:
     """Combines all scorers with profile-defined weights to rank segments.
 
@@ -267,10 +309,10 @@ class CompositeScorer:
 
     def score_all(
         self,
-        segments: list["Segment"],
-        transcript: "Transcript",
-        media: "MediaAsset",
-    ) -> list["ScoredSegment"]:
+        segments: list[Segment],
+        transcript: Transcript,
+        media: MediaAsset,
+    ) -> list[ScoredSegment]:
         """Score all segments and return them ranked by composite score.
 
         Args:
@@ -281,7 +323,6 @@ class CompositeScorer:
         Returns:
             Ranked list of ScoredSegment, highest score first.
         """
-        from vaclip.models.media import ScoredSegment
 
         log.info(
             "scoring.start",
@@ -327,7 +368,7 @@ class CompositeScorer:
 
     def _classify(
         self,
-        segment: "Segment",
+        segment: Segment,
         transcript_score: float,
         audio_score: float,
         visual_score: float,

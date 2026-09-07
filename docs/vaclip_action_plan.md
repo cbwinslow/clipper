@@ -1,7 +1,7 @@
 # VAClip Enterprise Setup - Action Plan
 ## Comprehensive Roadmap to Production-Ready Project
 
-**Generated:** 2026-05-23  
+**Generated:** 2026-05-23
 **Objective:** Transform VAClip into a fully documented, enterprise-ready project with complete AI agent enablement
 
 ---
@@ -179,8 +179,8 @@ tests/
 ### Phase 1: Critical Documentation (Week 1) 🔴
 
 #### Task 1.1: Create Missing Agent Documentation Files
-**Priority:** CRITICAL  
-**Effort:** 4-6 hours  
+**Priority:** CRITICAL
+**Effort:** 4-6 hours
 **Owner:** AI Agent (or Human)
 
 **Files to Create:**
@@ -237,8 +237,8 @@ tests/
 ---
 
 #### Task 1.2: Deploy OpenCode Master Prompt
-**Priority:** CRITICAL  
-**Effort:** 1 hour  
+**Priority:** CRITICAL
+**Effort:** 1 hour
 **Owner:** Human
 
 **Steps:**
@@ -261,8 +261,8 @@ tests/
 ---
 
 #### Task 1.3: Complete Test Fixtures
-**Priority:** CRITICAL  
-**Effort:** 3-4 hours  
+**Priority:** CRITICAL
+**Effort:** 3-4 hours
 **Owner:** AI Agent (with testing_agent.md guidance)
 
 **File to Update:** `tests/conftest.py`
@@ -273,25 +273,31 @@ tests/
 def settings() -> Settings:
     """Return test Settings instance with safe defaults."""
 
+
 @pytest.fixture
 def mock_media_asset() -> MediaAsset:
     """Return a mock MediaAsset for testing."""
+
 
 @pytest.fixture
 def mock_transcript_segments() -> list[TranscriptSegment]:
     """Return mock transcript segments."""
 
+
 @pytest.fixture
 def mock_highlight_candidates() -> list[HighlightCandidate]:
     """Return mock highlight candidates."""
+
 
 @pytest.fixture
 def temp_media_file(tmp_path: Path) -> Path:
     """Create a temporary test media file."""
 
+
 @pytest.fixture
 def mock_ffmpeg(mocker):
     """Mock FFmpeg subprocess calls."""
+
 
 @pytest.fixture
 def mock_whisper(mocker):
@@ -307,8 +313,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 1.4: Create CONTRIBUTING.md
-**Priority:** HIGH  
-**Effort:** 2-3 hours  
+**Priority:** HIGH
+**Effort:** 2-3 hours
 **Owner:** Human
 
 **Contents:**
@@ -341,8 +347,8 @@ def mock_whisper(mocker):
 ### Phase 2: Quality & Process (Week 2) 🟡
 
 #### Task 2.1: Create Troubleshooting Guide
-**Priority:** HIGH  
-**Effort:** 3-4 hours  
+**Priority:** HIGH
+**Effort:** 3-4 hours
 **Owner:** AI Agent or Human
 
 **File to Create:** `docs/troubleshooting.md`
@@ -391,8 +397,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 2.2: Create Testing Strategy Document
-**Priority:** HIGH  
-**Effort:** 2-3 hours  
+**Priority:** HIGH
+**Effort:** 2-3 hours
 **Owner:** AI Agent (with testing_agent.md)
 
 **File to Create:** `docs/testing_strategy.md`
@@ -430,8 +436,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 2.3: Create ADR Directory and Templates
-**Priority:** MEDIUM  
-**Effort:** 4-5 hours  
+**Priority:** MEDIUM
+**Effort:** 4-5 hours
 **Owner:** Human
 
 **Files to Create:**
@@ -473,8 +479,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 2.4: Set Up GitHub Project Board
-**Priority:** MEDIUM  
-**Effort:** 2-3 hours  
+**Priority:** MEDIUM
+**Effort:** 2-3 hours
 **Owner:** Human
 
 **Steps:**
@@ -504,8 +510,8 @@ def mock_whisper(mocker):
 ### Phase 3: User Experience (Week 3) 🟢
 
 #### Task 3.1: Create Installation Guide
-**Priority:** MEDIUM  
-**Effort:** 2-3 hours  
+**Priority:** MEDIUM
+**Effort:** 2-3 hours
 **Owner:** AI Agent or Human
 
 **File to Create:** `docs/installation.md`
@@ -543,8 +549,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 3.2: Create User Guide
-**Priority:** MEDIUM  
-**Effort:** 3-4 hours  
+**Priority:** MEDIUM
+**Effort:** 3-4 hours
 **Owner:** Human
 
 **File to Create:** `docs/user_guide.md`
@@ -583,8 +589,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 3.3: Create API Reference
-**Priority:** LOW  
-**Effort:** 3-4 hours  
+**Priority:** LOW
+**Effort:** 3-4 hours
 **Owner:** AI Agent
 
 **File to Create:** `docs/api_reference.md`
@@ -606,8 +612,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 3.4: Create SECURITY.md
-**Priority:** LOW  
-**Effort:** 1 hour  
+**Priority:** LOW
+**Effort:** 1 hour
 **Owner:** Human
 
 **File to Create:** `SECURITY.md` (at repository root)
@@ -633,8 +639,8 @@ def mock_whisper(mocker):
 ---
 
 #### Task 3.5: Set Up Dependabot
-**Priority:** LOW  
-**Effort:** 1 hour  
+**Priority:** LOW
+**Effort:** 1 hour
 **Owner:** Human
 
 **File to Create:** `.github/dependabot.yml`
@@ -665,7 +671,7 @@ updates:
 With all documentation in place, we're ready to tackle implementation tasks systematically.
 
 #### Task 4.1: Prioritize Implementation Tasks
-**Effort:** 1 hour  
+**Effort:** 1 hour
 **Owner:** Human + AI Agent
 
 **Steps:**
@@ -693,7 +699,7 @@ With all documentation in place, we're ready to tackle implementation tasks syst
 ---
 
 #### Task 4.2: Establish Development Workflow
-**Effort:** 2 hours  
+**Effort:** 2 hours
 **Owner:** Human
 
 **Workflow:**
@@ -722,7 +728,7 @@ With all documentation in place, we're ready to tackle implementation tasks syst
 ---
 
 #### Task 4.3: Set Development Velocity Goals
-**Effort:** 30 minutes  
+**Effort:** 30 minutes
 **Owner:** Human
 
 **Goals to Define:**
@@ -858,4 +864,3 @@ Blocked:           0
 ---
 
 **Let's build VAClip into production-ready excellence! 🚀**
-

@@ -12,10 +12,9 @@ Agent Instructions:
     - Save MediaAsset JSON to cache/<asset_id>/media_asset.json
     - See docs/agents/ingest_agent.md for full implementation guide
 """
+
 from __future__ import annotations
 
-import json
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -48,7 +47,7 @@ class YtDlpAdapter(BaseIngestAdapter):
 
     DEFAULT_FORMAT: str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
     AUDIO_SAMPLE_RATE: int = 16000  # Whisper requires 16kHz
-    AUDIO_CHANNELS: int = 1         # mono
+    AUDIO_CHANNELS: int = 1  # mono
 
     def __init__(
         self,
