@@ -309,4 +309,3 @@
 - Update version in all relevant places
 - Review and update API documentation
 - Create release notes
-
