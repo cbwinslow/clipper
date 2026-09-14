@@ -15,9 +15,9 @@ Agent Notes:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from collections.abc import Callable
 
-from vaclip.models.media import IngestResult, SourceRequest, SourceType
+from vaclip.models.media import IngestResult, SourceRequest
 
 # Type alias for event hook callbacks
 ProgressCallback = Callable[[float, str], None]  # (progress_pct, message)
@@ -37,9 +37,9 @@ class IngestAdapter(ABC):
 
     def __init__(
         self,
-        on_progress: Optional[ProgressCallback] = None,
-        on_complete: Optional[Callable[[IngestResult], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None,
+        on_progress: ProgressCallback | None = None,
+        on_complete: Callable[[IngestResult], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
     ) -> None:
         """Initialize the adapter with optional event hook callbacks."""
         self._on_progress = on_progress
