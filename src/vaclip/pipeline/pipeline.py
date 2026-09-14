@@ -11,16 +11,16 @@ Agent Instructions:
     - Log stage timing for benchmarking
     - See docs/agents/ingest_agent.md etc. for each stage's contract
 """
+
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from pathlib import Path
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
-from vaclip.utils.exceptions import VaClipError
 
 if TYPE_CHECKING:
     from vaclip.config.settings import Settings
@@ -51,10 +51,10 @@ class PipelineResult:
         completed_stages: Set of stages that ran successfully.
     """
 
-    media: "MediaAsset | None" = None
-    transcript: "Transcript | None" = None
-    scored_segments: "list[ScoredSegment]" = field(default_factory=list)
-    clips: "list[ExportedClip]" = field(default_factory=list)
+    media: MediaAsset | None = None
+    transcript: Transcript | None = None
+    scored_segments: list[ScoredSegment] = field(default_factory=list)
+    clips: list[ExportedClip] = field(default_factory=list)
     elapsed_seconds: dict[str, float] = field(default_factory=dict)
     completed_stages: set[PipelineStage] = field(default_factory=set)
 
@@ -88,7 +88,7 @@ class VAClipPipeline:
 
     def __init__(
         self,
-        settings: "Settings | None" = None,
+        settings: Settings | None = None,
         on_stage_start: StageCallback | None = None,
         on_stage_complete: StageCallback | None = None,
         on_stage_error: StageCallback | None = None,
@@ -103,6 +103,7 @@ class VAClipPipeline:
         """
         if settings is None:
             from vaclip.config.settings import get_settings
+
             settings = get_settings()
         self.settings = settings
         self.on_stage_start: StageCallback = on_stage_start or (lambda s, r: None)
@@ -202,12 +203,17 @@ class VAClipPipeline:
             self.on_stage_complete(stage, result)
         except Exception as exc:
             elapsed = time.perf_counter() - t0
-            log.error("pipeline.stage_failed", stage=stage.name, elapsed_s=round(elapsed, 2), error=str(exc))
+            log.error(
+                "pipeline.stage_failed",
+                stage=stage.name,
+                elapsed_s=round(elapsed, 2),
+                error=str(exc),
+            )
             self.on_stage_error(stage, result)
             raise
         return result
 
-    def _ingest(self, source: str, profile: str) -> "MediaAsset":
+    def _ingest(self, source: str, profile: str) -> MediaAsset:
         """Run the ingest stage.
 
         Args:
@@ -224,7 +230,7 @@ class VAClipPipeline:
         # return adapter.ingest(source, profile=profile)
         raise NotImplementedError()
 
-    def _transcribe(self, media: "MediaAsset") -> "Transcript":
+    def _transcribe(self, media: MediaAsset) -> Transcript:
         """Run the transcription stage.
 
         Args:
@@ -241,10 +247,10 @@ class VAClipPipeline:
 
     def _score(
         self,
-        media: "MediaAsset",
-        transcript: "Transcript",
+        media: MediaAsset,
+        transcript: Transcript,
         profile: str,
-    ) -> "list[ScoredSegment]":
+    ) -> list[ScoredSegment]:
         """Run the scoring stage.
 
         Args:
@@ -264,11 +270,11 @@ class VAClipPipeline:
 
     def _export(
         self,
-        media: "MediaAsset",
-        segments: "list[ScoredSegment]",
+        media: MediaAsset,
+        segments: list[ScoredSegment],
         framing: str,
         max_clips: int,
-    ) -> "list[ExportedClip]":
+    ) -> list[ExportedClip]:
         """Run the export stage.
 
         Args:
@@ -295,8 +301,14 @@ class VAClipPipeline:
         max_clips: int,
     ) -> None:
         """Log the planned pipeline actions without executing them."""
-        log.info("pipeline.plan", source=source, profile=profile, framing=framing,
-                 from_stage=from_stage.name, max_clips=max_clips)
+        log.info(
+            "pipeline.plan",
+            source=source,
+            profile=profile,
+            framing=framing,
+            from_stage=from_stage.name,
+            max_clips=max_clips,
+        )
         for stage in PipelineStage:
             if stage.value >= from_stage.value:
                 log.info("pipeline.plan.stage", stage=stage.name, status="would_run")

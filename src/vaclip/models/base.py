@@ -39,7 +39,7 @@ class VaClipBaseModel(BaseModel):
         return self.model_dump(mode="json")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "VaClipBaseModel":
+    def from_dict(cls, data: dict[str, Any]) -> VaClipBaseModel:
         """Deserialize model from dict (e.g., from JSON artifact)."""
         return cls.model_validate(data)
 

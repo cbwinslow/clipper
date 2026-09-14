@@ -12,12 +12,11 @@ Agent Instructions:
     - Never delete or overwrite source files
     - See docs/agents/export_agent.md for full implementation guide
 """
+
 from __future__ import annotations
 
 import json
-import subprocess
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +32,7 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Framing Strategies
 # ---------------------------------------------------------------------------
+
 
 class FramingStrategy(ABC):
     """Abstract base class for video framing/cropping strategies.
@@ -60,7 +60,7 @@ class FramingStrategy(ABC):
         ...
 
     @abstractmethod
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Build the FFmpeg -vf filter string for this framing.
 
         Args:
@@ -79,9 +79,11 @@ class WideFramingStrategy(FramingStrategy):
     width = 1920
     height = 1080
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Scale to 1920x1080, padding letterbox if needed."""
-        return "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black"
+        return (
+            "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1:color=black"
+        )
 
 
 class VerticalFramingStrategy(FramingStrategy):
@@ -91,7 +93,7 @@ class VerticalFramingStrategy(FramingStrategy):
     width = 1080
     height = 1920
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Crop center column from landscape source, then scale to 1080x1920."""
         # Crop the center ih*9/16 width strip, then scale
         return "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920"
@@ -104,7 +106,7 @@ class SquareFramingStrategy(FramingStrategy):
     width = 1080
     height = 1080
 
-    def build_filter(self, media: "MediaAsset") -> str:
+    def build_filter(self, media: MediaAsset) -> str:
         """Crop center square from source, then scale to 1080x1080."""
         return "crop=ih:ih:(iw-ih)/2:0,scale=1080:1080"
 
@@ -132,8 +134,7 @@ def get_framing_strategy(name: str) -> FramingStrategy:
     cls = FRAMING_STRATEGIES.get(name)
     if cls is None:
         raise ExportError(
-            f"Unknown framing strategy '{name}'. "
-            f"Available: {list(FRAMING_STRATEGIES)}"
+            f"Unknown framing strategy '{name}'. Available: {list(FRAMING_STRATEGIES)}"
         )
     return cls()
 
@@ -141,6 +142,7 @@ def get_framing_strategy(name: str) -> FramingStrategy:
 # ---------------------------------------------------------------------------
 # Clip Exporter
 # ---------------------------------------------------------------------------
+
 
 class ClipExporter:
     """Exports video clips from scored segments using FFmpeg.
@@ -162,8 +164,8 @@ class ClipExporter:
 
     # FFmpeg encoding settings (quality-first, matches user preference)
     VIDEO_CODEC: str = "libx264"
-    VIDEO_PRESET: str = "slow"   # better quality, slower encoding
-    VIDEO_CRF: int = 18          # 0=lossless, 51=worst; 18=high quality
+    VIDEO_PRESET: str = "slow"  # better quality, slower encoding
+    VIDEO_CRF: int = 18  # 0=lossless, 51=worst; 18=high quality
     AUDIO_CODEC: str = "aac"
     AUDIO_BITRATE: str = "192k"
 
@@ -183,11 +185,11 @@ class ClipExporter:
 
     def export(
         self,
-        media: "MediaAsset",
-        segments: list["ScoredSegment"],
+        media: MediaAsset,
+        segments: list[ScoredSegment],
         framing: str = "wide",
         max_clips: int = 10,
-    ) -> list["ExportedClip"]:
+    ) -> list[ExportedClip]:
         """Export top-N segments as clips with the given framing strategy.
 
         Args:
@@ -214,7 +216,7 @@ class ClipExporter:
             max_clips=max_clips,
         )
 
-        clips: list["ExportedClip"] = []
+        clips: list[ExportedClip] = []
         for seg in segments[:max_clips]:
             try:
                 clip = self._export_one(media, seg, strategy, asset_output_dir)
@@ -233,11 +235,11 @@ class ClipExporter:
 
     def _export_one(
         self,
-        media: "MediaAsset",
-        seg: "ScoredSegment",
+        media: MediaAsset,
+        seg: ScoredSegment,
         strategy: FramingStrategy,
         output_dir: Path,
-    ) -> "ExportedClip":
+    ) -> ExportedClip:
         """Export a single segment as a clip.
 
         Args:
@@ -252,7 +254,6 @@ class ClipExporter:
         Raises:
             ExportError: If FFmpeg fails.
         """
-        from vaclip.models.media import ExportedClip
 
         start = seg.segment.start
         end = seg.segment.end
@@ -300,7 +301,7 @@ class ClipExporter:
         # )
         raise NotImplementedError("ClipExporter._export_one() not yet implemented")
 
-    def _save_manifest(self, clips: list["ExportedClip"], output_dir: Path) -> None:
+    def _save_manifest(self, clips: list[ExportedClip], output_dir: Path) -> None:
         """Save a JSON manifest of all exported clips.
 
         Args:

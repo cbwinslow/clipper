@@ -21,12 +21,10 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import structlog
 import typer
 from rich.console import Console
-from rich.table import Table
 
 from vaclip.config.settings import Settings, load_settings
 from vaclip.models.schemas import FramingStrategy, Profile
@@ -56,7 +54,7 @@ def _version_callback(value: bool) -> None:  # noqa: FBT001
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(  # noqa: UP007
+    version: bool | None = typer.Option(  # noqa: UP007
         None,
         "--version",
         "-V",
@@ -76,19 +74,15 @@ def main(
 @app.command("run")
 def cmd_run(
     source: str = typer.Argument(..., help="URL or local path to media file."),
-    profile: Profile = typer.Option(
-        Profile.PODCAST, "--profile", "-p", help="Processing profile."
-    ),
+    profile: Profile = typer.Option(Profile.PODCAST, "--profile", "-p", help="Processing profile."),
     framing: FramingStrategy = typer.Option(
         FramingStrategy.WIDE, "--framing", "-f", help="Output framing strategy."
     ),
     max_clips: int = typer.Option(10, "--max-clips", "-n", help="Maximum clips to export."),
-    config: Optional[Path] = typer.Option(  # noqa: UP007
+    config: Path | None = typer.Option(  # noqa: UP007
         None, "--config", "-c", help="Path to YAML config override."
     ),
-    from_stage: str = typer.Option(
-        "ingest", "--from-stage", help="Resume from pipeline stage."
-    ),
+    from_stage: str = typer.Option("ingest", "--from-stage", help="Resume from pipeline stage."),
 ) -> None:
     """Run the full VAClip pipeline on a media source.
 
@@ -129,7 +123,7 @@ def cmd_plan(
     profile: Profile = typer.Option(Profile.PODCAST, "--profile", "-p"),
     framing: FramingStrategy = typer.Option(FramingStrategy.WIDE, "--framing", "-f"),
     max_clips: int = typer.Option(10, "--max-clips", "-n"),
-    config: Optional[Path] = typer.Option(None, "--config", "-c"),  # noqa: UP007
+    config: Path | None = typer.Option(None, "--config", "-c"),  # noqa: UP007
 ) -> None:
     """Dry-run: log pipeline plan without executing any stages.
 
