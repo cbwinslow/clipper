@@ -13,19 +13,14 @@ Agent Instructions:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from vaclip.models.schemas import (
-    HighlightType,
-    Profile,
+    ScoredSegment,
     Segment,
     SignalScore,
-    ScoredSegment,
     Transcript,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures

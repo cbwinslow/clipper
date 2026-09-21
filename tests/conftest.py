@@ -12,13 +12,13 @@ Agent Notes:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Generator
 
 import pytest
 
 # ============================================================
 # Custom pytest marks
 # ============================================================
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register custom pytest marks."""
@@ -31,6 +31,7 @@ def pytest_configure(config: pytest.Config) -> None:
 # ============================================================
 # Path fixtures
 # ============================================================
+
 
 @pytest.fixture
 def fixture_dir() -> Path:
@@ -65,6 +66,7 @@ def sample_video_path(fixture_dir: Path) -> Path:
 # Config fixtures
 # ============================================================
 
+
 @pytest.fixture
 def default_config_path() -> Path:
     """Return path to the default app config YAML."""
@@ -75,6 +77,7 @@ def default_config_path() -> Path:
 # Run ID fixtures
 # ============================================================
 
+
 @pytest.fixture
 def test_run_id() -> str:
     """Return a stable test run ID for artifact naming."""
@@ -84,6 +87,7 @@ def test_run_id() -> str:
 # ============================================================
 # Sample data fixtures
 # ============================================================
+
 
 @pytest.fixture
 def sample_transcript_segments() -> list[dict]:
@@ -96,7 +100,17 @@ def sample_transcript_segments() -> list[dict]:
     return [
         {"id": 0, "text": "Welcome to the podcast everyone.", "start": 0.0, "end": 3.5},
         {"id": 1, "text": "Today we have an incredible guest.", "start": 3.5, "end": 6.0},
-        {"id": 2, "text": "That is literally the funniest thing I have ever heard.", "start": 45.0, "end": 49.0},
+        {
+            "id": 2,
+            "text": "That is literally the funniest thing I have ever heard.",
+            "start": 45.0,
+            "end": 49.0,
+        },
         {"id": 3, "text": "Wait wait wait, say that again.", "start": 49.0, "end": 51.5},
-        {"id": 4, "text": "The key insight here is that nobody had thought of this before.", "start": 120.0, "end": 125.0},
+        {
+            "id": 4,
+            "text": "The key insight here is that nobody had thought of this before.",
+            "start": 120.0,
+            "end": 125.0,
+        },
     ]
