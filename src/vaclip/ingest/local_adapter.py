@@ -11,10 +11,10 @@ Agent Instructions:
     - Construct and return MediaAsset
     - See docs/agents/ingest_agent.md for full implementation guide
 """
+
 from __future__ import annotations
 
 import shutil
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -51,7 +51,7 @@ class LocalFileAdapter(BaseIngestAdapter):
         {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
     )
     AUDIO_SAMPLE_RATE: int = 16000  # Whisper requires 16kHz
-    AUDIO_CHANNELS: int = 1         # mono
+    AUDIO_CHANNELS: int = 1  # mono
 
     @property
     def supported_extensions(self) -> frozenset[str]:

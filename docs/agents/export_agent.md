@@ -34,10 +34,10 @@ src/vaclip/models/media.py    - ExportedClip model (add here)
 
 ```python
 segments: list[ScoredSegment]  # from scoring layer
-media: MediaAsset              # original video path
-profile: str                   # "podcast", "gaming", etc.
-framing: str                   # "wide", "vertical", "square"
-output_dir: pathlib.Path       # where to write clips
+media: MediaAsset  # original video path
+profile: str  # "podcast", "gaming", etc.
+framing: str  # "wide", "vertical", "square"
+output_dir: pathlib.Path  # where to write clips
 ```
 
 ### Output: ExportedClip
@@ -46,11 +46,11 @@ output_dir: pathlib.Path       # where to write clips
 class ExportedClip(IdentifiedModel):
     asset_id: str
     segment_rank: int
-    start: float              # seconds
-    end: float                # seconds
-    duration: float           # seconds
+    start: float  # seconds
+    end: float  # seconds
+    duration: float  # seconds
     output_path: pathlib.Path
-    framing: str              # "wide", "vertical", "square"
+    framing: str  # "wide", "vertical", "square"
     profile: str
     width: int
     height: int
@@ -98,8 +98,11 @@ class ClipExporter:
         ...
 
     def _get_strategy(self, framing: str) -> FramingStrategy:
-        strategies = {"wide": WideFramingStrategy, "vertical": VerticalFramingStrategy,
-                      "square": SquareFramingStrategy}
+        strategies = {
+            "wide": WideFramingStrategy,
+            "vertical": VerticalFramingStrategy,
+            "square": SquareFramingStrategy,
+        }
         cls = strategies.get(framing)
         if cls is None:
             raise ExportError(f"Unknown framing: {framing}")
@@ -131,6 +134,7 @@ class FramingStrategy(ABC):
 ```python
 class WideFramingStrategy(FramingStrategy):
     """16:9 landscape - suitable for YouTube full video or standard clips."""
+
     width = 1920
     height = 1080
 
@@ -144,6 +148,7 @@ class WideFramingStrategy(FramingStrategy):
 ```python
 class VerticalFramingStrategy(FramingStrategy):
     """9:16 portrait - suitable for YouTube Shorts, TikTok, Instagram Reels."""
+
     width = 1080
     height = 1920
 
@@ -158,6 +163,7 @@ class VerticalFramingStrategy(FramingStrategy):
 ```python
 class SquareFramingStrategy(FramingStrategy):
     """1:1 square - suitable for Instagram feed posts."""
+
     width = 1080
     height = 1080
 
@@ -188,6 +194,7 @@ FFmpeg must be installed on the system. No Python library needed - use `subproce
 
 ```python
 import subprocess
+
 result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 if result.returncode != 0:
     raise ExportError(f"FFmpeg failed: {result.stderr}")

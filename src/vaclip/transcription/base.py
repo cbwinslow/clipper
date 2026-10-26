@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -21,7 +20,7 @@ class TranscriptWord:
 
     word: str
     start: float  # seconds
-    end: float    # seconds
+    end: float  # seconds
     probability: float = 0.0
 
 
@@ -32,7 +31,7 @@ class TranscriptSegment:
     id: int
     text: str
     start: float  # seconds
-    end: float    # seconds
+    end: float  # seconds
     avg_logprob: float = 0.0
     no_speech_prob: float = 0.0
     words: list[TranscriptWord] = field(default_factory=list)
@@ -90,7 +89,9 @@ class TranscriptionBackend(ABC):
     """
 
     @abstractmethod
-    def transcribe(self, audio_path: str, run_id: str, language: Optional[str] = None) -> TranscriptResult:
+    def transcribe(
+        self, audio_path: str, run_id: str, language: str | None = None
+    ) -> TranscriptResult:
         """Transcribe audio file and return a TranscriptResult.
 
         Implementations must:
