@@ -13,13 +13,10 @@ Agent Instructions:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from vaclip.models.schemas import (
     ClipBounds,
-    ExportedClip,
     FramingStrategy,
     HighlightType,
     MediaMeta,
@@ -31,7 +28,6 @@ from vaclip.models.schemas import (
     Transcript,
     Word,
 )
-
 
 # ---------------------------------------------------------------------------
 # Word
@@ -137,13 +133,11 @@ class TestClipBounds:
         "start,end,expected_is_short",
         [
             (0.0, 30.0, True),
-            (0.0, 60.0, True),   # exactly 60 s -> short
+            (0.0, 60.0, True),  # exactly 60 s -> short
             (0.0, 61.0, False),
         ],
     )
-    def test_is_short_boundary(
-        self, start: float, end: float, expected_is_short: bool
-    ) -> None:
+    def test_is_short_boundary(self, start: float, end: float, expected_is_short: bool) -> None:
         # ExportedClip.is_short delegates to bounds.duration
         bounds = ClipBounds(start=start, end=end, pad_start=0.0, pad_end=0.0)
         assert bounds.duration <= 60.0 if expected_is_short else bounds.duration > 60.0
