@@ -19,7 +19,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
@@ -50,9 +49,9 @@ class HighlightType(str, Enum):
 class FramingStrategy(str, Enum):
     """Video framing / aspect-ratio strategy for exported clips."""
 
-    WIDE = "wide"        # 16:9  landscape
+    WIDE = "wide"  # 16:9  landscape
     VERTICAL = "vertical"  # 9:16  portrait (Shorts / TikTok)
-    SQUARE = "square"    # 1:1   Instagram
+    SQUARE = "square"  # 1:1   Instagram
 
 
 class Profile(str, Enum):
@@ -85,7 +84,7 @@ class MediaMeta(BaseModel, frozen=True):
     extra: dict[str, Any] = Field(default_factory=dict, description="Provider-specific extras")
 
     @classmethod
-    def example(cls) -> "MediaMeta":
+    def example(cls) -> MediaMeta:
         """Return a fixture instance for tests."""
         return cls(
             source_url="https://youtube.com/watch?v=example",
@@ -113,7 +112,7 @@ class Word(BaseModel, frozen=True):
     confidence: float = Field(1.0, ge=0.0, le=1.0, description="ASR confidence score")
 
     @model_validator(mode="after")
-    def end_after_start(self) -> "Word":
+    def end_after_start(self) -> Word:
         if self.end < self.start:
             raise ValueError("Word.end must be >= Word.start")
         return self
@@ -135,7 +134,7 @@ class Segment(BaseModel, frozen=True):
         return self.end - self.start
 
     @classmethod
-    def example(cls) -> "Segment":
+    def example(cls) -> Segment:
         return cls(
             id=0,
             text="This is an example sentence.",
@@ -225,7 +224,7 @@ class ClipBounds(BaseModel, frozen=True):
         return self.padded_end - self.padded_start
 
     @model_validator(mode="after")
-    def end_after_start(self) -> "ClipBounds":
+    def end_after_start(self) -> ClipBounds:
         if self.end <= self.start:
             raise ValueError("ClipBounds.end must be > ClipBounds.start")
         return self

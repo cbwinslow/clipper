@@ -13,8 +13,6 @@ Agent Notes:
 from __future__ import annotations
 
 from enum import Enum
-from pathlib import Path
-from typing import Optional
 
 from pydantic import Field, field_validator
 
@@ -65,10 +63,14 @@ class SourceRequest(VaClipBaseModel):
     """
 
     source: str = Field(description="Local file path or remote URL.")
-    source_type: Optional[SourceType] = Field(None, description="Force source type; auto-detected if None.")
-    profile: ContentProfile = Field(ContentProfile.GENERIC, description="Content profile for scoring.")
+    source_type: SourceType | None = Field(
+        None, description="Force source type; auto-detected if None."
+    )
+    profile: ContentProfile = Field(
+        ContentProfile.GENERIC, description="Content profile for scoring."
+    )
     intent: ClipIntent = Field(ClipIntent.HIGHLIGHT, description="Target clip detection intent.")
-    run_id: Optional[str] = Field(None, description="Optional run ID for artifact grouping.")
+    run_id: str | None = Field(None, description="Optional run ID for artifact grouping.")
 
     @field_validator("source")
     @classmethod
@@ -90,16 +92,16 @@ class MediaMetadata(VaClipBaseModel):
 
     file_path: str = Field(description="Absolute path to the media file.")
     duration_seconds: float = Field(description="Total duration in seconds.")
-    width: Optional[int] = Field(None, description="Video width in pixels.")
-    height: Optional[int] = Field(None, description="Video height in pixels.")
-    fps: Optional[float] = Field(None, description="Frames per second.")
-    video_codec: Optional[str] = Field(None, description="Video codec name.")
-    audio_codec: Optional[str] = Field(None, description="Audio codec name.")
-    audio_sample_rate: Optional[int] = Field(None, description="Audio sample rate in Hz.")
-    audio_channels: Optional[int] = Field(None, description="Number of audio channels.")
-    file_size_bytes: Optional[int] = Field(None, description="File size in bytes.")
-    format_name: Optional[str] = Field(None, description="Container format name.")
-    bit_rate: Optional[int] = Field(None, description="Overall bitrate in bits/s.")
+    width: int | None = Field(None, description="Video width in pixels.")
+    height: int | None = Field(None, description="Video height in pixels.")
+    fps: float | None = Field(None, description="Frames per second.")
+    video_codec: str | None = Field(None, description="Video codec name.")
+    audio_codec: str | None = Field(None, description="Audio codec name.")
+    audio_sample_rate: int | None = Field(None, description="Audio sample rate in Hz.")
+    audio_channels: int | None = Field(None, description="Number of audio channels.")
+    file_size_bytes: int | None = Field(None, description="File size in bytes.")
+    format_name: str | None = Field(None, description="Container format name.")
+    bit_rate: int | None = Field(None, description="Overall bitrate in bits/s.")
 
 
 class IngestResult(IdentifiedModel):
@@ -113,6 +115,6 @@ class IngestResult(IdentifiedModel):
 
     source_request: SourceRequest
     staged_path: str = Field(description="Local path to staged media file.")
-    audio_path: Optional[str] = Field(None, description="Path to extracted audio file.")
-    metadata: Optional[MediaMetadata] = Field(None, description="ffprobe metadata.")
+    audio_path: str | None = Field(None, description="Path to extracted audio file.")
+    metadata: MediaMetadata | None = Field(None, description="ffprobe metadata.")
     run_id: str = Field(description="Unique run identifier for artifact grouping.")
