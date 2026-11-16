@@ -36,7 +36,7 @@ src/vaclip/models/media.py  - Transcript, WordToken models (add here)
 
 ```python
 audio_path: pathlib.Path  # WAV file, 16kHz mono (from MediaAsset.audio_path)
-asset_id: str             # for naming output files
+asset_id: str  # for naming output files
 ```
 
 ### Output: Transcript
@@ -44,17 +44,18 @@ asset_id: str             # for naming output files
 ```python
 class WordToken(VaClipBaseModel):
     word: str
-    start: float   # seconds
-    end: float     # seconds
+    start: float  # seconds
+    end: float  # seconds
     confidence: float  # 0.0-1.0
+
 
 class Transcript(IdentifiedModel):
     asset_id: str
-    language: str          # detected language code, e.g. "en"
+    language: str  # detected language code, e.g. "en"
     words: list[WordToken]
-    segments: list[dict]   # raw Whisper segments
-    model_name: str        # e.g. "large-v3"
-    backend: str           # "whisper_cuda" or "whisper_cpu"
+    segments: list[dict]  # raw Whisper segments
+    model_name: str  # e.g. "large-v3"
+    backend: str  # "whisper_cuda" or "whisper_cpu"
     duration_seconds: float
     created_at: datetime
 ```
@@ -69,6 +70,7 @@ Save as JSON: `cache/transcripts/<asset_id>.json`
 from faster_whisper import WhisperModel
 from vaclip.transcription.base import BaseTranscriptionBackend
 from vaclip.models.media import Transcript, WordToken
+
 
 class WhisperBackend(BaseTranscriptionBackend):
     """GPU-accelerated Whisper transcription using faster-whisper + CUDA."""
@@ -101,7 +103,7 @@ class WhisperCPUBackend(WhisperBackend):
 
     DEVICE: str = "cpu"
     COMPUTE_TYPE: str = "int8"  # best CPU performance
-    MODEL_NAME: str = "base"    # smaller model for CPU speed
+    MODEL_NAME: str = "base"  # smaller model for CPU speed
 ```
 
 ### Auto-selection
@@ -110,6 +112,7 @@ class WhisperCPUBackend(WhisperBackend):
 def get_transcription_backend(settings: Settings) -> BaseTranscriptionBackend:
     """Return the best available backend based on hardware."""
     import torch
+
     if torch.cuda.is_available():
         log.info("transcription.backend", backend="cuda")
         return WhisperBackend(model_name=settings.transcription.model_name)
@@ -152,8 +155,12 @@ pip install torch --index-url https://download.pytorch.org/whl/cu118
 
 ```python
 log.info("transcription.start", asset_id=asset_id, backend=self.DEVICE)
-log.info("transcription.complete", asset_id=asset_id,
-         word_count=len(transcript.words), duration=transcript.duration_seconds)
+log.info(
+    "transcription.complete",
+    asset_id=asset_id,
+    word_count=len(transcript.words),
+    duration=transcript.duration_seconds,
+)
 log.warning("transcription.low_confidence", asset_id=asset_id, min_conf=min_confidence)
 log.error("transcription.failed", asset_id=asset_id, error=str(e))
 ```

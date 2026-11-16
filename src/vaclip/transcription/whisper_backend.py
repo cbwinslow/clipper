@@ -12,10 +12,10 @@ Agent Instructions:
     - get_transcription_backend() auto-selects based on torch.cuda.is_available()
     - See docs/agents/transcription_agent.md for full implementation guide
 """
+
 from __future__ import annotations
 
 import pathlib
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from vaclip.logging.setup import get_logger
@@ -48,7 +48,7 @@ class WhisperBackend(BaseTranscriptionBackend):
 
     MODEL_NAME: str = "large-v3"
     DEVICE: str = "cuda"
-    COMPUTE_TYPE: str = "float16"   # optimal for RTX 3060
+    COMPUTE_TYPE: str = "float16"  # optimal for RTX 3060
     MODELS_DIR: str = "models"
 
     def __init__(self, model_name: str | None = None) -> None:
@@ -94,7 +94,7 @@ class WhisperBackend(BaseTranscriptionBackend):
         audio_path: pathlib.Path,
         asset_id: str,
         language: str | None = None,
-    ) -> "Transcript":  # type: ignore[name-defined]  # noqa: F821
+    ) -> Transcript:  # type: ignore[name-defined]  # noqa: F821
         """Transcribe an audio file to a word-level timestamped Transcript.
 
         Args:
@@ -108,7 +108,6 @@ class WhisperBackend(BaseTranscriptionBackend):
         Raises:
             TranscriptionError: If transcription fails.
         """
-        from vaclip.models.media import Transcript, WordToken  # avoid circular
 
         log.info(
             "transcription.start",
@@ -165,13 +164,14 @@ class WhisperBackend(BaseTranscriptionBackend):
             log.error("transcription.failed", asset_id=asset_id, error=str(exc))
             raise TranscriptionError(f"Transcription failed: {exc}") from exc
 
-    def _save_transcript(self, transcript: "Transcript") -> None:  # type: ignore[name-defined]
+    def _save_transcript(self, transcript: Transcript) -> None:  # type: ignore[name-defined]
         """Serialize transcript to JSON in the cache directory.
 
         Args:
             transcript: The Transcript to serialize.
         """
         from vaclip.config.settings import get_settings
+
         settings = get_settings()
         dest = settings.paths.transcripts_dir / f"{transcript.asset_id}.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -186,13 +186,13 @@ class WhisperCPUBackend(WhisperBackend):
     Automatically selected by get_transcription_backend() when CUDA is unavailable.
     """
 
-    MODEL_NAME: str = "base"     # smaller model for CPU speed
+    MODEL_NAME: str = "base"  # smaller model for CPU speed
     DEVICE: str = "cpu"
-    COMPUTE_TYPE: str = "int8"   # best CPU performance
+    COMPUTE_TYPE: str = "int8"  # best CPU performance
 
 
 def get_transcription_backend(
-    settings: "Settings | None" = None,
+    settings: Settings | None = None,
 ) -> WhisperBackend:
     """Return the best available transcription backend for the current hardware.
 
@@ -207,16 +207,22 @@ def get_transcription_backend(
     """
     if settings is None:
         from vaclip.config.settings import get_settings
+
         settings = get_settings()
 
     try:
         import torch
+
         cuda_available = torch.cuda.is_available()
     except ImportError:
         cuda_available = False
 
     if cuda_available:
-        log.info("transcription.backend_selected", backend="cuda", model=settings.transcription.model_name)
+        log.info(
+            "transcription.backend_selected",
+            backend="cuda",
+            model=settings.transcription.model_name,
+        )
         return WhisperBackend(model_name=settings.transcription.model_name)
 
     log.warning(
