@@ -35,9 +35,9 @@ src/vaclip/models/media.py   - ScoredSegment, Segment models (add here)
 ```python
 class Segment(VaClipBaseModel):
     start: float  # seconds
-    end: float    # seconds
+    end: float  # seconds
     words: list[WordToken]  # from Transcript
-    text: str     # joined word text
+    text: str  # joined word text
 ```
 
 ### Output: ScoredSegment
@@ -45,13 +45,13 @@ class Segment(VaClipBaseModel):
 ```python
 class ScoredSegment(VaClipBaseModel):
     segment: Segment
-    transcript_score: float    # 0.0-1.0
-    audio_score: float         # 0.0-1.0
-    visual_score: float        # 0.0-1.0
-    composite_score: float     # weighted average
-    rank: int                  # 1 = highest
-    highlight_type: str        # "funny", "insightful", "hype", "action", etc.
-    profile: str               # which scoring profile was used
+    transcript_score: float  # 0.0-1.0
+    audio_score: float  # 0.0-1.0
+    visual_score: float  # 0.0-1.0
+    composite_score: float  # weighted average
+    rank: int  # 1 = highest
+    highlight_type: str  # "funny", "insightful", "hype", "action", etc.
+    profile: str  # which scoring profile was used
 ```
 
 Save as JSON: `cache/scores/<asset_id>.json`
@@ -141,15 +141,20 @@ class ScoringProfile:
     transcript_weight: float = 0.5
     audio_weight: float = 0.3
     visual_weight: float = 0.2
-    min_duration: float = 5.0   # seconds
+    min_duration: float = 5.0  # seconds
     max_duration: float = 60.0  # seconds
     top_n: int = 10
 
+
 PROFILES = {
-    "podcast": ScoringProfile("podcast", transcript_weight=0.7, audio_weight=0.2, visual_weight=0.1),
+    "podcast": ScoringProfile(
+        "podcast", transcript_weight=0.7, audio_weight=0.2, visual_weight=0.1
+    ),
     "gaming": ScoringProfile("gaming", transcript_weight=0.2, audio_weight=0.4, visual_weight=0.4),
     "sports": ScoringProfile("sports", transcript_weight=0.1, audio_weight=0.3, visual_weight=0.6),
-    "interview": ScoringProfile("interview", transcript_weight=0.6, audio_weight=0.3, visual_weight=0.1),
+    "interview": ScoringProfile(
+        "interview", transcript_weight=0.6, audio_weight=0.3, visual_weight=0.1
+    ),
     "generic": ScoringProfile("generic"),
 }
 ```

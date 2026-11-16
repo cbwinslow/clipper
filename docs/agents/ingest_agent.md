@@ -73,6 +73,7 @@ import yt_dlp
 from vaclip.ingest.base import BaseIngestAdapter
 from vaclip.models.media import MediaAsset
 
+
 class YtDlpAdapter(BaseIngestAdapter):
     """Downloads media from YouTube, Rumble, Kick, Twitch, and 1000+ other sites."""
 
@@ -129,6 +130,7 @@ FFmpeg binary must be installed on the system and available in PATH.
 
 ```python
 from vaclip.logging.setup import get_logger
+
 log = get_logger(__name__)
 
 log.info("ingest.start", source=source, adapter=self.__class__.__name__)
